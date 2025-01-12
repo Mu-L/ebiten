@@ -1,42 +1,17 @@
-// The MIT License (MIT)
-//
-// Copyright (c) 2015-2016 Martin Lindhe
-// Copyright (c) 2016      Hajime Hoshi
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-// THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2015 Martin Lindhe
+// SPDX-FileCopyrightText: 2016 The Ebitengine Authors
 
-//go:build example
-// +build example
+// The original project is gol (https://github.com/martinlindhe/gol) by Martin Lindhe.
 
 package main
 
 import (
 	"log"
-	"math/rand"
-	"time"
+	"math/rand/v2"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 // World represents the game state.
 type World struct {
@@ -59,8 +34,8 @@ func NewWorld(width, height int, maxInitLiveCells int) *World {
 // init inits world with a random state.
 func (w *World) init(maxLiveCells int) {
 	for i := 0; i < maxLiveCells; i++ {
-		x := rand.Intn(w.width)
-		y := rand.Intn(w.height)
+		x := rand.IntN(w.width)
+		y := rand.IntN(w.height)
 		w.area[y*w.width+x] = true
 	}
 }
@@ -116,20 +91,6 @@ func (w *World) Draw(pix []byte) {
 	}
 }
 
-func max(a, b int) int {
-	if a < b {
-		return b
-	}
-	return a
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // neighbourCount calculates the Moore neighborhood of (x, y).
 func neighbourCount(a []bool, width, height, x, y int) int {
 	c := 0
@@ -171,7 +132,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.pixels = make([]byte, screenWidth*screenHeight*4)
 	}
 	g.world.Draw(g.pixels)
-	screen.ReplacePixels(g.pixels)
+	screen.WritePixels(g.pixels)
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
@@ -184,7 +145,7 @@ func main() {
 	}
 
 	ebiten.SetWindowSize(screenWidth*2, screenHeight*2)
-	ebiten.SetWindowTitle("Game of Life (Ebiten Demo)")
+	ebiten.SetWindowTitle("Game of Life (Ebitengine Demo)")
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}

@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -47,7 +44,7 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	w, h := gophersImage.Size()
+	w, h := gophersImage.Bounds().Dx(), gophersImage.Bounds().Dy()
 	op := &ebiten.DrawImageOptions{}
 
 	// Move the image's center to the screen's upper-left corner.
@@ -74,9 +71,6 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	// Decode an image from the image file's byte slice.
-	// Now the byte slice is generated with //go:generate for Go 1.15 or older.
-	// If you use Go 1.16 or newer, it is strongly recommended to use //go:embed to embed the image file.
-	// See https://pkg.go.dev/embed for more details.
 	img, _, err := image.Decode(bytes.NewReader(images.Gophers_jpg))
 	if err != nil {
 		log.Fatal(err)
@@ -84,7 +78,7 @@ func main() {
 	gophersImage = ebiten.NewImageFromImage(img)
 
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("Clip (Ebiten Demo)")
+	ebiten.SetWindowTitle("Clip (Ebitengine Demo)")
 	if err := ebiten.RunGame(&Game{}); err != nil {
 		log.Fatal(err)
 	}

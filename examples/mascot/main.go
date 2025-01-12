@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 // Mascot is a desktop mascot on cross platforms.
 // This is inspired by mattn's gopher (https://github.com/mattn/gopher).
 package main
@@ -24,8 +21,7 @@ import (
 	"image"
 	_ "image/png"
 	"log"
-	"math/rand"
-	"time"
+	"math/rand/v2"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	rmascot "github.com/hajimehoshi/ebiten/v2/examples/resources/images/mascot"
@@ -44,9 +40,6 @@ var (
 
 func init() {
 	// Decode an image from the image file's byte slice.
-	// Now the byte slice is generated with //go:generate for Go 1.15 or older.
-	// If you use Go 1.16 or newer, it is strongly recommended to use //go:embed to embed the image file.
-	// See https://pkg.go.dev/embed for more details.
 	img1, _, err := image.Decode(bytes.NewReader(rmascot.Out01_png))
 	if err != nil {
 		log.Fatal(err)
@@ -66,10 +59,6 @@ func init() {
 	gopher3 = ebiten.NewImageFromImage(img3)
 }
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
 type mascot struct {
 	x16  int
 	y16  int
@@ -86,7 +75,7 @@ func (m *mascot) Layout(outsideWidth, outsideHeight int) (int, int) {
 func (m *mascot) Update() error {
 	m.count++
 
-	sw, sh := ebiten.ScreenSizeInFullscreen()
+	sw, sh := ebiten.Monitor().Size()
 	ebiten.SetWindowPosition(m.x16/16, m.y16/16+sh-height)
 
 	if m.vx16 == 0 {
@@ -100,7 +89,7 @@ func (m *mascot) Update() error {
 		m.vx16 = 64
 	}
 
-	// Accelarate the mascot in the Y direction.
+	// Accelerate the mascot in the Y direction.
 	m.vy16 += 8
 	m.y16 += m.vy16
 
@@ -111,8 +100,8 @@ func (m *mascot) Update() error {
 	}
 
 	// If the mascto is on the ground, cause an action in random.
-	if rand.Intn(60) == 0 && m.y16 == 0 {
-		switch rand.Intn(2) {
+	if rand.IntN(60) == 0 && m.y16 == 0 {
+		switch rand.IntN(2) {
 		case 0:
 			// Jump.
 			m.vy16 = -240
@@ -145,11 +134,15 @@ func (m *mascot) Draw(screen *ebiten.Image) {
 }
 
 func main() {
-	ebiten.SetScreenTransparent(true)
 	ebiten.SetWindowDecorated(false)
 	ebiten.SetWindowFloating(true)
 	ebiten.SetWindowSize(width, height)
-	if err := ebiten.RunGame(&mascot{}); err != nil {
+	ebiten.SetWindowMousePassthrough(true)
+
+	op := &ebiten.RunGameOptions{}
+	op.ScreenTransparent = true
+	op.SkipTaskbar = true
+	if err := ebiten.RunGameWithOptions(&mascot{}, op); err != nil {
 		log.Fatal(err)
 	}
 }

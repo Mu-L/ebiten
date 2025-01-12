@@ -12,21 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
-	"errors"
 	"log"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
-
-var regularTermination = errors.New("regular termination")
 
 type Game struct {
 	windowClosingHandled bool
@@ -38,7 +32,7 @@ func (g *Game) Update() error {
 	}
 	if g.windowClosingHandled {
 		if inpututil.IsKeyJustPressed(ebiten.KeyY) {
-			return regularTermination
+			return ebiten.Termination
 		}
 		if inpututil.IsKeyJustPressed(ebiten.KeyN) {
 			g.windowClosingHandled = false
@@ -61,8 +55,8 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	ebiten.SetWindowClosingHandled(true)
-	ebiten.SetWindowTitle("Window Closing (Ebiten Demo)")
-	if err := ebiten.RunGame(&Game{}); err != nil && err != regularTermination {
+	ebiten.SetWindowTitle("Window Closing (Ebitengine Demo)")
+	if err := ebiten.RunGame(&Game{}); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -13,19 +13,15 @@
 // limitations under the License.
 
 //go:build ignore
-// +build ignore
 
 package main
 
 import (
-	"errors"
 	"fmt"
 	"image/color"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
-
-var regularTermination = errors.New("regular termination")
 
 var srcInit *ebiten.Image
 
@@ -35,7 +31,7 @@ func init() {
 		h = 2
 	)
 
-	//src2 := ebiten.NewImage(1, 1)
+	// src2 := ebiten.NewImage(1, 1)
 
 	src0 := ebiten.NewImage(w, h)
 	src0.Fill(color.RGBA{0xff, 0xff, 0xff, 0xff})
@@ -59,7 +55,7 @@ type Game struct {
 func (g *Game) Update() error {
 	g.count++
 	if g.count == 16 {
-		return regularTermination
+		return ebiten.Termination
 	}
 	return nil
 }
@@ -69,7 +65,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	screen.DrawImage(srcInit, nil)
 
 	if g.dst == nil {
-		g.dst = ebiten.NewImage(screen.Size())
+		g.dst = ebiten.NewImage(screen.Bounds().Dx(), screen.Bounds().Dy())
 		return
 	}
 
@@ -88,14 +84,14 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	)
 
 	src0 := ebiten.NewImage(w, h)
-	defer src0.Dispose()
+	defer src0.Deallocate()
 	src0.Fill(color.RGBA{0xff, 0xff, 0xff, 0xff})
 	src0.Set(0, 0, color.RGBA{0, 0, 0, 0xff})
 	src0.Set(0, 1, color.RGBA{0, 0, 0, 0xff})
 	src0.Set(1, 0, color.RGBA{0, 0, 0, 0xff})
 
 	src1 := ebiten.NewImage(w, h)
-	defer src1.Dispose()
+	defer src1.Deallocate()
 	src1.DrawImage(src0, nil)
 
 	screen.Fill(color.RGBA{0xff, 0xff, 0xff, 0xff})
@@ -115,7 +111,7 @@ func (g *Game) Layout(width, height int) (int, int) {
 }
 
 func main() {
-	if err := ebiten.RunGame(&Game{}); err != nil && err != regularTermination {
+	if err := ebiten.RunGame(&Game{}); err != nil {
 		panic(err)
 	}
 }

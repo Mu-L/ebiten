@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -85,7 +82,7 @@ func (gm *Game) updateOffscreen(centerX, centerY, size float64) {
 			gm.offscreenPix[p+3] = 0xff
 		}
 	}
-	gm.offscreen.ReplacePixels(gm.offscreenPix)
+	gm.offscreen.WritePixels(gm.offscreenPix)
 }
 
 func (g *Game) Update() error {
@@ -102,7 +99,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("Mandelbrot (Ebiten Demo)")
+	ebiten.SetWindowTitle("Mandelbrot (Ebitengine Demo)")
 	if err := ebiten.RunGame(NewGame()); err != nil {
 		log.Fatal(err)
 	}

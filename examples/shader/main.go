@@ -12,13 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
 	"bytes"
+	_ "embed"
 	"image"
 	_ "image/png"
 	"log"
@@ -27,6 +25,29 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	resources "github.com/hajimehoshi/ebiten/v2/examples/resources/images/shader"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
+)
+
+var (
+	//go:embed default.go
+	default_go []byte
+
+	//go:embed texel.go
+	texel_go []byte
+
+	//go:embed lighting.go
+	lighting_go []byte
+
+	//go:embed radialblur.go
+	radialblur_go []byte
+
+	//go:embed chromaticaberration.go
+	chromaticaberration_go []byte
+
+	//go:embed dissolve.go
+	dissolve_go []byte
+
+	//go:embed water.go
+	water_go []byte
 )
 
 const (
@@ -43,9 +64,6 @@ var (
 
 func init() {
 	// Decode an image from the image file's byte slice.
-	// Now the byte slice is generated with //go:generate for Go 1.15 or older.
-	// If you use Go 1.16 or newer, it is strongly recommended to use //go:embed to embed the image file.
-	// See https://pkg.go.dev/embed for more details.
 	img, _, err := image.Decode(bytes.NewReader(resources.Gopher_png))
 	if err != nil {
 		log.Fatal(err)
@@ -85,7 +103,6 @@ var shaderSrcs = [][]byte{
 	chromaticaberration_go,
 	dissolve_go,
 	water_go,
-	crt_go,
 }
 
 type Game struct {
@@ -124,14 +141,13 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		return
 	}
 
-	w, h := screen.Size()
+	w, h := screen.Bounds().Dx(), screen.Bounds().Dy()
 	cx, cy := ebiten.CursorPosition()
 
 	op := &ebiten.DrawRectShaderOptions{}
-	op.Uniforms = map[string]interface{}{
-		"Time":       float32(g.time) / 60,
-		"Cursor":     []float32{float32(cx), float32(cy)},
-		"ScreenSize": []float32{float32(w), float32(h)},
+	op.Uniforms = map[string]any{
+		"Time":   float32(g.time) / 60,
+		"Cursor": []float32{float32(cx), float32(cy)},
 	}
 	op.Images[0] = gopherImage
 	op.Images[1] = normalImage
@@ -149,7 +165,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("Shader (Ebiten Demo)")
+	ebiten.SetWindowTitle("Shader (Ebitengine Demo)")
 	if err := ebiten.RunGame(&Game{}); err != nil {
 		log.Fatal(err)
 	}

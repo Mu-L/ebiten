@@ -13,19 +13,15 @@
 // limitations under the License.
 
 //go:build ignore
-// +build ignore
 
 package main
 
 import (
-	"errors"
 	"image/color"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
-
-var regularTermination = errors.New("regular termination")
 
 type Game struct {
 	count int
@@ -34,7 +30,7 @@ type Game struct {
 func (g *Game) Update() error {
 	g.count++
 	if g.count >= 2 {
-		return regularTermination
+		return ebiten.Termination
 	}
 	return nil
 }
@@ -43,26 +39,26 @@ func (g *Game) Draw(screen *ebiten.Image) {
 }
 
 func (g *Game) Layout(width, height int) (int, int) {
-	// Ebiten's image function should be able to be called even in Layout.
+	// Ebitengine's image function should be able to be called even in Layout.
 	done := make(chan struct{})
 	timeout := time.After(time.Second)
 	go func() {
-		select {
-		case <-done:
-		case <-timeout:
-			panic("timeout")
-		}
+		i := ebiten.NewImage(width, height)
+		i.Fill(color.White)
+		i.Deallocate()
+		close(done)
 	}()
-	defer close(done)
 
-	i := ebiten.NewImage(width, height)
-	i.Fill(color.White)
-	i.Dispose()
+	select {
+	case <-done:
+	case <-timeout:
+		panic("timeout")
+	}
 	return width, height
 }
 
 func main() {
-	if err := ebiten.RunGame(&Game{}); err != nil && err != regularTermination {
+	if err := ebiten.RunGame(&Game{}); err != nil {
 		panic(err)
 	}
 }

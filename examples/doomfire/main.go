@@ -12,16 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
 	"image/color"
 	"log"
-	"math/rand"
-	"time"
+	"math/rand/v2"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -105,7 +101,7 @@ func (g *Game) updateFireIntensityPerPixel(currentPixelIndex int) {
 		return
 	}
 
-	d := rand.Intn(3)
+	d := rand.IntN(3)
 	newI := int(g.indices[below]) - d
 	if newI < 0 {
 		newI = 0
@@ -134,7 +130,7 @@ func (g *Game) Update() error {
 
 func (g *Game) Draw(screen *ebiten.Image) {
 	g.renderFire()
-	screen.ReplacePixels(g.pixels)
+	screen.WritePixels(g.pixels)
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
@@ -142,10 +138,8 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-
 	ebiten.SetWindowSize(screenWidth*6, screenHeight*6)
-	ebiten.SetWindowTitle("Doom Fire (Ebiten Demo)")
+	ebiten.SetWindowTitle("Doom Fire (Ebitengine Demo)")
 	if err := ebiten.RunGame(NewGame()); err != nil {
 		log.Fatal(err)
 	}

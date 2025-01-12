@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -23,6 +20,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -62,14 +60,14 @@ func (g *Game) Update() error {
 	g.axes = map[ebiten.GamepadID][]string{}
 	g.pressedButtons = map[ebiten.GamepadID][]string{}
 	for id := range g.gamepadIDs {
-		maxAxis := ebiten.GamepadAxisNum(id)
-		for a := 0; a < maxAxis; a++ {
+		maxAxis := ebiten.GamepadAxisType(ebiten.GamepadAxisCount(id))
+		for a := ebiten.GamepadAxisType(0); a < maxAxis; a++ {
 			v := ebiten.GamepadAxisValue(id, a)
 			g.axes[id] = append(g.axes[id], fmt.Sprintf("%d:%+0.2f", a, v))
 		}
 
-		maxButton := ebiten.GamepadButton(ebiten.GamepadButtonNum(id))
-		for b := ebiten.GamepadButton(id); b < maxButton; b++ {
+		maxButton := ebiten.GamepadButton(ebiten.GamepadButtonCount(id))
+		for b := ebiten.GamepadButton(0); b < maxButton; b++ {
 			if ebiten.IsGamepadButtonPressed(id, b) {
 				g.pressedButtons[id] = append(g.pressedButtons[id], strconv.Itoa(int(b)))
 			}
@@ -87,6 +85,28 @@ func (g *Game) Update() error {
 			for b := ebiten.StandardGamepadButton(0); b <= ebiten.StandardGamepadButtonMax; b++ {
 				// Log button events.
 				if inpututil.IsStandardGamepadButtonJustPressed(id, b) {
+					var strong float64
+					var weak float64
+					switch b {
+					case ebiten.StandardGamepadButtonLeftTop,
+						ebiten.StandardGamepadButtonLeftLeft,
+						ebiten.StandardGamepadButtonLeftRight,
+						ebiten.StandardGamepadButtonLeftBottom:
+						weak = 0.5
+					case ebiten.StandardGamepadButtonRightTop,
+						ebiten.StandardGamepadButtonRightLeft,
+						ebiten.StandardGamepadButtonRightRight,
+						ebiten.StandardGamepadButtonRightBottom:
+						strong = 0.5
+					}
+					if strong > 0 || weak > 0 {
+						op := &ebiten.VibrateGamepadOptions{
+							Duration:        200 * time.Millisecond,
+							StrongMagnitude: strong,
+							WeakMagnitude:   weak,
+						}
+						ebiten.VibrateGamepad(id, op)
+					}
 					log.Printf("standard button pressed: id: %d, button: %d", id, b)
 				}
 				if inpututil.IsStandardGamepadButtonJustReleased(id, b) {
@@ -131,13 +151,17 @@ func standardMap(id ebiten.GamepadID) string {
 	for b, str := range standardButtonToString {
 		placeholder := "[" + str + strings.Repeat(" ", 4-len(str)) + "]"
 		v := ebiten.StandardGamepadButtonValue(id, b)
-		if ebiten.IsStandardGamepadButtonPressed(id, b) {
+		switch {
+		case !ebiten.IsStandardGamepadButtonAvailable(id, b):
+			m = strings.Replace(m, placeholder, "  --  ", 1)
+		case ebiten.IsStandardGamepadButtonPressed(id, b):
 			m = strings.Replace(m, placeholder, fmt.Sprintf("[%0.2f]", v), 1)
-		} else {
+		default:
 			m = strings.Replace(m, placeholder, fmt.Sprintf(" %0.2f ", v), 1)
 		}
 	}
 
+	// TODO: Use ebiten.IsStandardGamepadAxisAvailable
 	m += fmt.Sprintf("    Left Stick:  X: %+0.2f, Y: %+0.2f\n    Right Stick: X: %+0.2f, Y: %+0.2f",
 		ebiten.StandardGamepadAxisValue(id, ebiten.StandardGamepadAxisLeftStickHorizontal),
 		ebiten.StandardGamepadAxisValue(id, ebiten.StandardGamepadAxisLeftStickVertical),
@@ -184,7 +208,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("Gamepad (Ebiten Demo)")
+	ebiten.SetWindowTitle("Gamepad (Ebitengine Demo)")
 	if err := ebiten.RunGame(&Game{}); err != nil {
 		log.Fatal(err)
 	}

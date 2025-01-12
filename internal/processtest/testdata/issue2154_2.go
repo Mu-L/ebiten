@@ -13,20 +13,16 @@
 // limitations under the License.
 
 //go:build ignore
-// +build ignore
 
 package main
 
 import (
-	"errors"
 	"fmt"
 	"image/color"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 )
-
-var regularTermination = errors.New("regular termination")
 
 var (
 	baseImage    *ebiten.Image
@@ -58,7 +54,7 @@ type Game struct {
 func (g *Game) Update() error {
 	g.count++
 	if g.count == 16 {
-		return regularTermination
+		return ebiten.Termination
 	}
 	return nil
 }
@@ -75,7 +71,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	// The blow 3 line matters to reproduce #2154.
 	mx, my := ebiten.CursorPosition()
-	msg := fmt.Sprintf("TPS: %.01f; FPS: %.01f; cursor: (%d, %d)", ebiten.CurrentTPS(), ebiten.CurrentFPS(), mx, my)
+	msg := fmt.Sprintf("TPS: %.01f; FPS: %.01f; cursor: (%d, %d)", ebiten.ActualTPS(), ebiten.ActualFPS(), mx, my)
 	ebitenutil.DebugPrint(screen, msg)
 }
 
@@ -86,7 +82,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 func main() {
 	ebiten.SetWindowTitle("Test")
 
-	if err := ebiten.RunGame(&Game{}); err != nil && err != regularTermination {
+	if err := ebiten.RunGame(&Game{}); err != nil {
 		panic(err)
 	}
 }

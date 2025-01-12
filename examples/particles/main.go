@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -26,17 +23,12 @@ import (
 	_ "image/png"
 	"log"
 	"math"
-	"math/rand"
-	"time"
+	"math/rand/v2"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/examples/resources/images"
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 const (
 	screenWidth  = 640
@@ -47,9 +39,6 @@ var smokeImage *ebiten.Image
 
 func init() {
 	// Decode an image from the image file's byte slice.
-	// Now the byte slice is generated with //go:generate for Go 1.15 or older.
-	// If you use Go 1.16 or newer, it is strongly recommended to use //go:embed to embed the image file.
-	// See https://pkg.go.dev/embed for more details.
 	img, _, err := image.Decode(bytes.NewReader(images.Smoke_png))
 	if err != nil {
 		log.Fatal(err)
@@ -65,7 +54,7 @@ type sprite struct {
 	img   *ebiten.Image
 	scale float64
 	angle float64
-	alpha float64
+	alpha float32
 }
 
 func (s *sprite) update() {
@@ -93,15 +82,15 @@ func (s *sprite) draw(screen *ebiten.Image) {
 
 	op := &ebiten.DrawImageOptions{}
 
-	sx, sy := s.img.Size()
+	sx, sy := s.img.Bounds().Dx(), s.img.Bounds().Dy()
 	op.GeoM.Translate(-float64(sx)/2, -float64(sy)/2)
 	op.GeoM.Rotate(s.angle)
 	op.GeoM.Scale(s.scale, s.scale)
 	op.GeoM.Translate(x, y)
 	op.GeoM.Translate(ox, oy)
 
-	rate := float64(s.count) / float64(s.maxCount)
-	alpha := 0.0
+	rate := float32(s.count) / float32(s.maxCount)
+	var alpha float32
 	if rate < 0.2 {
 		alpha = rate / 0.2
 	} else if rate > 0.8 {
@@ -110,13 +99,13 @@ func (s *sprite) draw(screen *ebiten.Image) {
 		alpha = 1
 	}
 	alpha *= s.alpha
-	op.ColorM.Scale(1, 1, 1, alpha)
+	op.ColorScale.ScaleAlpha(alpha)
 
 	screen.DrawImage(s.img, op)
 }
 
 func newSprite(img *ebiten.Image) *sprite {
-	c := rand.Intn(50) + 300
+	c := rand.IntN(50) + 300
 	dir := rand.Float64() * 2 * math.Pi
 	a := rand.Float64() * 2 * math.Pi
 	s := rand.Float64()*0.1 + 0.4
@@ -142,7 +131,7 @@ func (g *Game) Update() error {
 		g.sprites = list.New()
 	}
 
-	if g.sprites.Len() < 500 && rand.Intn(4) < 3 {
+	if g.sprites.Len() < 500 && rand.IntN(4) < 3 {
 		// Emit
 		g.sprites.PushBack(newSprite(smokeImage))
 	}
@@ -164,7 +153,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		s.draw(screen)
 	}
 
-	ebitenutil.DebugPrint(screen, fmt.Sprintf("TPS: %0.2f\nSprites: %d", ebiten.CurrentTPS(), g.sprites.Len()))
+	ebitenutil.DebugPrint(screen, fmt.Sprintf("TPS: %0.2f\nSprites: %d", ebiten.ActualTPS(), g.sprites.Len()))
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
@@ -173,7 +162,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("Particles (Ebiten demo)")
+	ebiten.SetWindowTitle("Particles (Ebitengine Demo)")
 	if err := ebiten.RunGame(&Game{}); err != nil {
 		log.Fatal(err)
 	}

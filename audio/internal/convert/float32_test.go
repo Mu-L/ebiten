@@ -1,4 +1,4 @@
-// Copyright 2019 The Ebiten Authors
+// Copyright 2024 The Ebitengine Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,95 +17,97 @@ package convert_test
 import (
 	"bytes"
 	"io"
-	"math"
+	"math/rand/v2"
 	"testing"
+	"unsafe"
 
 	"github.com/hajimehoshi/ebiten/v2/audio/internal/convert"
 )
 
-type f32reader struct {
-	data []float32
-	pos  int
+func randInt16s(n int) []int16 {
+	r := make([]int16, n)
+	for i := range r {
+		r[i] = int16(rand.IntN(1<<16) - (1 << 15))
+	}
+	return r
 }
 
-func (f *f32reader) Read(buf []float32) (int, error) {
-	if f.pos == len(f.data) {
-		return 0, io.EOF
+func TestFloat32(t *testing.T) {
+	type testCase struct {
+		Name string
+		In   []int16
 	}
-	n := copy(buf, f.data[f.pos:])
-	f.pos += n
-	return n, nil
-}
-
-func newFloat32Reader(data []float32) convert.Float32Reader {
-	return &f32reader{data: data}
-}
-
-func TestFloat32Reader(t *testing.T) {
-	in1 := make([]float32, 256)
-	for i := range in1 {
-		in1[i] = float32(math.Sin(float64(i)))
-	}
-	in2 := make([]float32, 65536)
-	for i := range in2 {
-		in2[i] = float32(math.Cos(float64(i)))
-	}
-
-	cases := []struct {
-		In []float32
-		N  int
-	}{
+	cases := []testCase{
 		{
-			In: in1,
-			N:  1,
+			Name: "empty",
+			In:   nil,
 		},
 		{
-			In: in1,
-			N:  2,
+			Name: "-1, 0, 1",
+			In:   []int16{-32768, 0, 32767},
 		},
 		{
-			In: in1,
-			N:  3,
+			Name: "8 0s",
+			In:   []int16{0, 0, 0, 0, 0, 0, 0, 0},
 		},
 		{
-			In: in1,
-			N:  1024,
+			Name: "random 256 values",
+			In:   randInt16s(256),
 		},
 		{
-			In: in2,
-			N:  1,
-		},
-		{
-			In: in2,
-			N:  4096,
+			Name: "random 65536 values",
+			In:   randInt16s(65536),
 		},
 	}
-
-	for i, c := range cases {
-		r := convert.NewReaderFromFloat32Reader(newFloat32Reader(c.In))
-
-		got := []byte{}
-		for {
-			buf := make([]byte, c.N)
-			n, err := r.Read(buf)
-			if err != nil {
-				if n == 0 && err == io.EOF {
-					break
+	for _, c := range cases {
+		c := c
+		t.Run(c.Name, func(t *testing.T) {
+			for _, seek := range []bool{false, true} {
+				seek := seek
+				name := "nonseek"
+				if seek {
+					name = "seek"
 				}
-				t.Fatal(err)
+				t.Run(name, func(t *testing.T) {
+					var in, out []byte
+					if len(c.In) > 0 {
+						outF32 := make([]float32, len(c.In))
+						for i := range c.In {
+							outF32[i] = float32(c.In[i]) / (1 << 15)
+						}
+						in = unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(c.In))), len(c.In)*2)
+						out = unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(outF32))), len(outF32)*4)
+					}
+					r := convert.NewFloat32BytesReaderFromInt16BytesReader(bytes.NewReader(in)).(io.ReadSeeker)
+					var got []byte
+					for {
+						var buf [97]byte
+						n, err := r.Read(buf[:])
+						got = append(got, buf[:n]...)
+						if err != nil {
+							if err != io.EOF {
+								t.Fatal(err)
+							}
+							break
+						}
+						if seek {
+							// Shifting by incomplete bytes should not affect the result.
+							for i := 0; i < 4; i++ {
+								if _, err := r.Seek(int64(i), io.SeekCurrent); err != nil {
+									if err != io.EOF {
+										t.Fatal(err)
+									}
+									break
+								}
+							}
+						}
+					}
+					want := out
+					if !bytes.Equal(got, want) {
+						t.Errorf("got: %v, want: %v", got, want)
+					}
+				})
 			}
-			got = append(got, buf[:n]...)
-		}
-
-		want := make([]byte, len(c.In)*2)
-		for i, f := range c.In {
-			s := int16(f * (1<<15 - 1))
-			want[2*i] = byte(s)
-			want[2*i+1] = byte(s >> 8)
-		}
-
-		if !bytes.Equal(got, want) {
-			t.Errorf("case: %d, got: %v, want: %v", i, got, want)
-		}
+		})
 	}
 }

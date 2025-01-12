@@ -12,29 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
 	"fmt"
 	"image/color"
 	"log"
-	"math/rand"
-	"time"
+	"math/rand/v2"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 const (
-	screenWidth  = 640
-	screenHeight = 480
-	gridSize     = 10
-	xNumInScreen = screenWidth / gridSize
-	yNumInScreen = screenHeight / gridSize
+	screenWidth        = 640
+	screenHeight       = 480
+	gridSize           = 10
+	xGridCountInScreen = screenWidth / gridSize
+	yGridCountInScreen = screenHeight / gridSize
 )
 
 const (
@@ -61,10 +58,6 @@ type Game struct {
 	level         int
 }
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
 func (g *Game) collidesWithApple() bool {
 	return g.snakeBody[0].X == g.apple.X &&
 		g.snakeBody[0].Y == g.apple.Y
@@ -83,8 +76,8 @@ func (g *Game) collidesWithSelf() bool {
 func (g *Game) collidesWithWall() bool {
 	return g.snakeBody[0].X < 0 ||
 		g.snakeBody[0].Y < 0 ||
-		g.snakeBody[0].X >= xNumInScreen ||
-		g.snakeBody[0].Y >= yNumInScreen
+		g.snakeBody[0].X >= xGridCountInScreen ||
+		g.snakeBody[0].Y >= yGridCountInScreen
 }
 
 func (g *Game) needsToMoveSnake() bool {
@@ -96,14 +89,16 @@ func (g *Game) reset() {
 	g.apple.Y = 3 * gridSize
 	g.moveTime = 4
 	g.snakeBody = g.snakeBody[:1]
-	g.snakeBody[0].X = xNumInScreen / 2
-	g.snakeBody[0].Y = yNumInScreen / 2
+	g.snakeBody[0].X = xGridCountInScreen / 2
+	g.snakeBody[0].Y = yGridCountInScreen / 2
 	g.score = 0
 	g.level = 1
 	g.moveDirection = dirNone
 }
 
 func (g *Game) Update() error {
+	// Decide the snake's direction along with the user input.
+	// A U-turn is forbidden here (e.g. if the snake is moving in the left direction, the snake cannot go to the right direction immediately).
 	if inpututil.IsKeyJustPressed(ebiten.KeyArrowLeft) || inpututil.IsKeyJustPressed(ebiten.KeyA) {
 		if g.moveDirection != dirRight {
 			g.moveDirection = dirLeft
@@ -130,8 +125,8 @@ func (g *Game) Update() error {
 		}
 
 		if g.collidesWithApple() {
-			g.apple.X = rand.Intn(xNumInScreen - 1)
-			g.apple.Y = rand.Intn(yNumInScreen - 1)
+			g.apple.X = rand.IntN(xGridCountInScreen - 1)
+			g.apple.Y = rand.IntN(yGridCountInScreen - 1)
 			g.snakeBody = append(g.snakeBody, Position{
 				X: g.snakeBody[len(g.snakeBody)-1].X,
 				Y: g.snakeBody[len(g.snakeBody)-1].Y,
@@ -174,14 +169,14 @@ func (g *Game) Update() error {
 
 func (g *Game) Draw(screen *ebiten.Image) {
 	for _, v := range g.snakeBody {
-		ebitenutil.DrawRect(screen, float64(v.X*gridSize), float64(v.Y*gridSize), gridSize, gridSize, color.RGBA{0x80, 0xa0, 0xc0, 0xff})
+		vector.DrawFilledRect(screen, float32(v.X*gridSize), float32(v.Y*gridSize), gridSize, gridSize, color.RGBA{0x80, 0xa0, 0xc0, 0xff}, false)
 	}
-	ebitenutil.DrawRect(screen, float64(g.apple.X*gridSize), float64(g.apple.Y*gridSize), gridSize, gridSize, color.RGBA{0xFF, 0x00, 0x00, 0xff})
+	vector.DrawFilledRect(screen, float32(g.apple.X*gridSize), float32(g.apple.Y*gridSize), gridSize, gridSize, color.RGBA{0xFF, 0x00, 0x00, 0xff}, false)
 
 	if g.moveDirection == dirNone {
 		ebitenutil.DebugPrint(screen, fmt.Sprintf("Press up/down/left/right to start"))
 	} else {
-		ebitenutil.DebugPrint(screen, fmt.Sprintf("FPS: %0.2f Level: %d Score: %d Best Score: %d", ebiten.CurrentFPS(), g.level, g.score, g.bestScore))
+		ebitenutil.DebugPrint(screen, fmt.Sprintf("FPS: %0.2f Level: %d Score: %d Best Score: %d", ebiten.ActualFPS(), g.level, g.score, g.bestScore))
 	}
 }
 
@@ -195,14 +190,14 @@ func newGame() *Game {
 		moveTime:  4,
 		snakeBody: make([]Position, 1),
 	}
-	g.snakeBody[0].X = xNumInScreen / 2
-	g.snakeBody[0].Y = yNumInScreen / 2
+	g.snakeBody[0].X = xGridCountInScreen / 2
+	g.snakeBody[0].Y = yGridCountInScreen / 2
 	return g
 }
 
 func main() {
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("Snake (Ebiten Demo)")
+	ebiten.SetWindowTitle("Snake (Ebitengine Demo)")
 	if err := ebiten.RunGame(newGame()); err != nil {
 		log.Fatal(err)
 	}

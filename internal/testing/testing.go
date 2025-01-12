@@ -15,14 +15,11 @@
 package testing
 
 import (
-	"errors"
 	"os"
 	"testing"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
-
-var regularTermination = errors.New("regular termination")
 
 type game struct {
 	m    *testing.M
@@ -31,7 +28,7 @@ type game struct {
 
 func (g *game) Update() error {
 	g.code = g.m.Run()
-	return regularTermination
+	return ebiten.Termination
 }
 
 func (*game) Draw(*ebiten.Image) {
@@ -44,10 +41,13 @@ func (*game) Layout(int, int) (int, int) {
 func MainWithRunLoop(m *testing.M) {
 	// Run an Ebiten process so that (*Image).At is available.
 	g := &game{
-		m: m,
+		m:    m,
+		code: 1,
 	}
-	if err := ebiten.RunGame(g); err != nil && err != regularTermination {
+	if err := ebiten.RunGame(g); err != nil {
 		panic(err)
 	}
-	os.Exit(g.code)
+	if g.code != 0 {
+		os.Exit(g.code)
+	}
 }

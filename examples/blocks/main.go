@@ -12,12 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
+	"bufio"
 	"flag"
 	"log"
 	"os"
@@ -36,14 +34,20 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := pprof.StartCPUProfile(f); err != nil {
+		w := bufio.NewWriter(f)
+		if err := pprof.StartCPUProfile(w); err != nil {
 			log.Fatal(err)
 		}
+		defer func() {
+			if err := w.Flush(); err != nil {
+				log.Fatal(err)
+			}
+		}()
 		defer pprof.StopCPUProfile()
 	}
 
 	ebiten.SetWindowSize(blocks.ScreenWidth*2, blocks.ScreenHeight*2)
-	ebiten.SetWindowTitle("Blocks (Ebiten Demo)")
+	ebiten.SetWindowTitle("Blocks (Ebitengine Demo)")
 	if err := ebiten.RunGame(&blocks.Game{}); err != nil {
 		log.Fatal(err)
 	}

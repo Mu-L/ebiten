@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -38,7 +35,7 @@ import (
 const (
 	screenWidth  = 640
 	screenHeight = 480
-	sampleRate   = 32000
+	sampleRate   = 48000
 )
 
 var ebitenImage *ebiten.Image
@@ -59,7 +56,7 @@ type Game struct {
 	audioContext *audio.Context
 }
 
-func (g *Game) initAudio() {
+func (g *Game) initAudioIfNeeded() {
 	if g.player != nil {
 		return
 	}
@@ -70,15 +67,16 @@ func (g *Game) initAudio() {
 
 	// Decode an Ogg file.
 	// oggS is a decoded io.ReadCloser and io.Seeker.
-	oggS, err := vorbis.DecodeWithoutResampling(bytes.NewReader(raudio.Ragtime_ogg))
+	oggS, err := vorbis.DecodeF32(bytes.NewReader(raudio.Ragtime_ogg))
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Wrap the raw audio with the StereoPanStream
-	g.panstream = NewStereoPanStreamFromReader(audio.NewInfiniteLoop(oggS, oggS.Length()))
+	g.panstream = NewStereoPanStream(audio.NewInfiniteLoop(oggS, oggS.Length()))
+	g.panstream.SetPan(g.panning)
 
-	g.player, err = g.audioContext.NewPlayer(g.panstream)
+	g.player, err = g.audioContext.NewPlayerF32(g.panstream)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -87,28 +85,31 @@ func (g *Game) initAudio() {
 	g.player.Play()
 }
 
-// time is whithin the 0 ... 1 range
+// time is within the 0 ... 1 range
 func lerp(a, b, t float64) float64 {
 	return a*(1-t) + b*t
 }
 
 func (g *Game) Update() error {
-	g.initAudio()
 	g.count++
 	r := float64(g.count) * ((1.0 / 60.0) * 2 * math.Pi) * 0.1 // full cycle every 10 seconds
 	g.xpos = (float64(screenWidth) / 2) + math.Cos(r)*(float64(screenWidth)/2)
 	g.panning = lerp(-1, 1, g.xpos/float64(screenWidth))
+
+	// Initialize the audio after the panning is determined.
+	g.initAudioIfNeeded()
 	g.panstream.SetPan(g.panning)
+
 	return nil
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	pos := g.player.Current()
+	pos := g.player.Position()
 	msg := fmt.Sprintf(`TPS: %0.2f
 This is an example using
 stereo audio panning.
 Current: %0.2f[s]
-Panning: %.2f`, ebiten.CurrentTPS(), float64(pos)/float64(time.Second), g.panning)
+Panning: %.2f`, ebiten.ActualTPS(), float64(pos)/float64(time.Second), g.panning)
 	ebitenutil.DebugPrint(screen, msg)
 
 	// draw image to show where the sound is at related to the screen
@@ -123,9 +124,6 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	// Decode an image from the image file's byte slice.
-	// Now the byte slice is generated with //go:generate for Go 1.15 or older.
-	// If you use Go 1.16 or newer, it is strongly recommended to use //go:embed to embed the image file.
-	// See https://pkg.go.dev/embed for more details.
 	img, _, err := image.Decode(bytes.NewReader(images.Ebiten_png))
 	if err != nil {
 		log.Fatal(err)
@@ -133,7 +131,7 @@ func main() {
 	ebitenImage = ebiten.NewImageFromImage(img)
 
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("Audio Panning Loop (Ebiten Demo)")
+	ebiten.SetWindowTitle("Audio Panning Loop (Ebitengine Demo)")
 	g := &Game{}
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
@@ -164,7 +162,7 @@ func (s *StereoPanStream) Read(p []byte) (int, error) {
 	// Align the buffer size in multiples of 4. The extra part is pushed to the buffer for the
 	// next time.
 	totalN := bufN + readN
-	extra := totalN - totalN/4*4
+	extra := totalN - totalN/8*8
 	s.buf = append(s.buf, p[totalN-extra:totalN]...)
 	alignedN := totalN - extra
 
@@ -173,16 +171,22 @@ func (s *StereoPanStream) Read(p []byte) (int, error) {
 	// When pan is -1.0, only the left channel of the stereo sound is audible, when pan is 1.0,
 	// only the right channel of the stereo sound is audible.
 	// https://docs.unity3d.com/ScriptReference/AudioSource-panStereo.html
-	ls := math.Min(s.pan*-1+1, 1)
-	rs := math.Min(s.pan+1, 1)
-	for i := 0; i < alignedN; i += 4 {
-		lc := int16(float64(int16(p[i])|int16(p[i+1])<<8) * ls)
-		rc := int16(float64(int16(p[i+2])|int16(p[i+3])<<8) * rs)
+	ls := float32(math.Min(s.pan*-1+1, 1))
+	rs := float32(math.Min(s.pan+1, 1))
+	for i := 0; i < alignedN; i += 8 {
+		lc := math.Float32frombits(uint32(p[i])|(uint32(p[i+1])<<8)|(uint32(p[i+2])<<16)|(uint32(p[i+3])<<24)) * ls
+		rc := math.Float32frombits(uint32(p[i+4])|(uint32(p[i+5])<<8)|(uint32(p[i+6])<<16)|(uint32(p[i+7])<<24)) * rs
+		lcBits := math.Float32bits(lc)
+		rcBits := math.Float32bits(rc)
 
-		p[i] = byte(lc)
-		p[i+1] = byte(lc >> 8)
-		p[i+2] = byte(rc)
-		p[i+3] = byte(rc >> 8)
+		p[i] = byte(lcBits)
+		p[i+1] = byte(lcBits >> 8)
+		p[i+2] = byte(lcBits >> 16)
+		p[i+3] = byte(lcBits >> 24)
+		p[i+4] = byte(rcBits)
+		p[i+5] = byte(rcBits >> 8)
+		p[i+6] = byte(rcBits >> 16)
+		p[i+7] = byte(rcBits >> 24)
 	}
 	return alignedN, err
 }
@@ -195,12 +199,12 @@ func (s *StereoPanStream) Pan() float64 {
 	return s.pan
 }
 
-// NewStereoPanStreamFromReader returns a new StereoPanStream with a buffered src.
+// NewStereoPanStream returns a new StereoPanStream with a buffered src.
 //
 // The src's format must be linear PCM (16bits little endian, 2 channel stereo)
 // without a header (e.g. RIFF header). The sample rate must be same as that
 // of the audio context.
-func NewStereoPanStreamFromReader(src io.ReadSeeker) *StereoPanStream {
+func NewStereoPanStream(src io.ReadSeeker) *StereoPanStream {
 	return &StereoPanStream{
 		ReadSeeker: src,
 	}

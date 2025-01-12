@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 // This example is an experiment to minify images with various filters.
 // When linear filter is used, mipmap images should be used for high-quality rendering (#578).
 
@@ -35,7 +32,7 @@ import (
 )
 
 const (
-	screenWidth  = 800
+	screenWidth  = 1000
 	screenHeight = 480
 )
 
@@ -47,19 +44,27 @@ type Game struct {
 	rotate  bool
 	clip    bool
 	counter int
+	pause   bool
 }
 
 func (g *Game) Update() error {
-	g.counter++
-	if g.counter == 480 {
-		g.counter = 0
-	}
-
 	if inpututil.IsKeyJustPressed(ebiten.KeyR) {
 		g.rotate = !g.rotate
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyC) {
 		g.clip = !g.clip
+	}
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		g.pause = !g.pause
+	}
+
+	if g.pause {
+		return nil
+	}
+
+	g.counter++
+	if g.counter == 480 {
+		g.counter = 0
 	}
 	return nil
 }
@@ -68,8 +73,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	s := 1.5 / math.Pow(1.01, float64(g.counter))
 
 	clippedGophersImage := gophersImage.SubImage(image.Rect(100, 100, 200, 200)).(*ebiten.Image)
-	for i, f := range []ebiten.Filter{ebiten.FilterNearest, ebiten.FilterLinear} {
-		w, h := gophersImage.Size()
+	for i := range 3 {
+		//for i, f := range []ebiten.Filter{ebiten.FilterNearest, ebiten.FilterLinear} {
+		w, h := gophersImage.Bounds().Dx(), gophersImage.Bounds().Dy()
 
 		op := &ebiten.DrawImageOptions{}
 		if g.rotate {
@@ -78,8 +84,15 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			op.GeoM.Translate(float64(w)/2, float64(h)/2)
 		}
 		op.GeoM.Scale(s, s)
-		op.GeoM.Translate(32+float64(i*w)*s+float64(i*4), 64)
-		op.Filter = f
+		op.GeoM.Translate(32+float64(i*w)*s+float64(i*4), 100)
+		if i == 0 {
+			op.Filter = ebiten.FilterNearest
+		} else {
+			op.Filter = ebiten.FilterLinear
+		}
+		if i == 2 {
+			op.DisableMipmaps = true
+		}
 		if g.clip {
 			screen.DrawImage(clippedGophersImage, op)
 		} else {
@@ -87,9 +100,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		}
 	}
 
-	msg := fmt.Sprintf(`Minifying images (Nearest filter vs Linear filter):
+	msg := fmt.Sprintf(`Minifying images (Nearest filter, Linear filter (w/ mipmaps), and Linear Filter (w/o mipmaps)):
 Press R to rotate the images.
 Press C to clip the images.
+Click to pause and resume.
 Scale: %0.2f`, s)
 	ebitenutil.DebugPrint(screen, msg)
 }
@@ -100,9 +114,6 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	// Decode an image from the image file's byte slice.
-	// Now the byte slice is generated with //go:generate for Go 1.15 or older.
-	// If you use Go 1.16 or newer, it is strongly recommended to use //go:embed to embed the image file.
-	// See https://pkg.go.dev/embed for more details.
 	img, _, err := image.Decode(bytes.NewReader(images.Gophers_jpg))
 	if err != nil {
 		log.Fatal(err)
@@ -111,7 +122,7 @@ func main() {
 	gophersImage = ebiten.NewImageFromImage(img)
 
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("Minify (Ebiten Demo)")
+	ebiten.SetWindowTitle("Minify (Ebitengine Demo)")
 	if err := ebiten.RunGame(&Game{}); err != nil {
 		log.Fatal(err)
 	}

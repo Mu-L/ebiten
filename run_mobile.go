@@ -13,7 +13,6 @@
 // limitations under the License.
 
 //go:build android || ios
-// +build android ios
 
 package ebiten
 
@@ -24,10 +23,11 @@ import (
 // RunGameWithoutMainLoop runs the game, but doesn't call the loop on the main (UI) thread.
 // RunGameWithoutMainLoop returns immediately unlike Run.
 //
-// Ebiten users should NOT call RunGameWithoutMainLoop.
+// Ebitengine users should NOT call RunGameWithoutMainLoop.
 // Instead, functions in github.com/hajimehoshi/ebiten/v2/mobile package calls this.
 //
 // TODO: Remove this. In order to remove this, the gameForUI should be in another package.
-func RunGameWithoutMainLoop(game Game) {
-	ui.RunWithoutMainLoop(newGameForUI(game))
+func RunGameWithoutMainLoop(game Game, options *RunGameOptions) {
+	op := toUIRunOptions(options)
+	ui.Get().RunWithoutMainLoop(newGameForUI(game, op.ScreenTransparent), op)
 }

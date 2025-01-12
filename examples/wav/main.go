@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
 	"bytes"
+	"flag"
+	"io"
 	"log"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -33,6 +32,10 @@ const (
 	screenWidth  = 640
 	screenHeight = 480
 	sampleRate   = 48000
+)
+
+var (
+	flagBitsPerSample = flag.Int("bits", 16, "bits per sample")
 )
 
 type Game struct {
@@ -58,17 +61,24 @@ func NewGame() (*Game, error) {
 	//         return err
 	//     }
 	//
-	//     d, err := wav.DecodeWithoutResampling(f)
+	//     d, err := wav.DecodeF32(f)
 	//     ...
 
 	// Decode wav-formatted data and retrieve decoded PCM stream.
-	d, err := wav.DecodeWithoutResampling(bytes.NewReader(raudio.Jab_wav))
+	var r io.Reader
+	switch *flagBitsPerSample {
+	case 8:
+		r = bytes.NewReader(raudio.Jab8_wav)
+	default:
+		r = bytes.NewReader(raudio.Jab_wav)
+	}
+	d, err := wav.DecodeF32(r)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create an audio.Player that has one stream.
-	g.audioPlayer, err = g.audioContext.NewPlayer(d)
+	g.audioPlayer, err = g.audioContext.NewPlayerF32(d)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +90,10 @@ func (g *Game) Update() error {
 	if inpututil.IsKeyJustPressed(ebiten.KeyP) {
 		// As audioPlayer has one stream and remembers the playing position,
 		// rewinding is needed before playing when reusing audioPlayer.
-		g.audioPlayer.Rewind()
+		if err := g.audioPlayer.Rewind(); err != nil {
+			return err
+		}
+
 		g.audioPlayer.Play()
 	}
 	return nil
@@ -99,12 +112,13 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func main() {
+	flag.Parse()
 	g, err := NewGame()
 	if err != nil {
 		log.Fatal(err)
 	}
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("WAV (Ebiten Demo)")
+	ebiten.SetWindowTitle("WAV (Ebitengine Demo)")
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}

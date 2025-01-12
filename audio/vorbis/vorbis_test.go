@@ -16,12 +16,22 @@ package vorbis_test
 
 import (
 	"bytes"
+	_ "embed"
+	"io"
 	"testing"
 
 	"github.com/jfreymuth/oggvorbis"
 
 	"github.com/hajimehoshi/ebiten/v2/audio"
 	"github.com/hajimehoshi/ebiten/v2/audio/vorbis"
+)
+
+var (
+	//go:embed test_mono.ogg
+	test_mono_ogg []byte
+
+	//go:embed test_tooshort.ogg
+	test_tooshort_ogg []byte
 )
 
 var audioContext = audio.NewContext(44100)
@@ -40,14 +50,36 @@ func TestMono(t *testing.T) {
 	}
 
 	// Stream decoded by audio/vorbis.DecodeWithSampleRate() is always 16bit stereo.
-	got := s.Length()
-
 	// On the other hand, the original vorbis package is monoral.
 	// As Length() represents the number of samples,
 	// this needs to be doubled by 2 (= bytes in 16bits).
-	want := r.Length() * 2 * 2
+	if got, want := s.Length(), r.Length()*2*2; got != want {
+		t.Errorf("s.Length(): got: %d, want: %d", got, want)
+	}
 
-	if got != want {
+	if got, want := s.SampleRate(), audioContext.SampleRate(); got != want {
+		t.Errorf("s.SampleRate(): got: %d, want: %d", got, want)
+	}
+}
+
+func TestMonoF32(t *testing.T) {
+	bs := test_mono_ogg
+
+	s, err := vorbis.DecodeF32(bytes.NewReader(bs))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := oggvorbis.NewReader(bytes.NewReader(bs))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Stream decoded by audio/vorbis.DecodeF32() is always 32bit float stereo.
+	// On the other hand, the original vorbis package is monoral.
+	// As Length() represents the number of samples,
+	// this needs to be doubled by 4 (= bytes in 32bits).
+	if got, want := s.Length(), r.Length()*2*4; got != want {
 		t.Errorf("s.Length(): got: %d, want: %d", got, want)
 	}
 }
@@ -60,9 +92,62 @@ func TestTooShort(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := s.Length()
-	want := int64(79424)
-	if got != want {
+	if got, want := s.Length(), int64(79424); got != want {
+		t.Errorf("s.Length(): got: %d, want: %d", got, want)
+	}
+
+	if got, want := s.SampleRate(), audioContext.SampleRate(); got != want {
+		t.Errorf("s.SampleRate(): got: %d, want: %d", got, want)
+	}
+}
+
+func TestTooShortF32(t *testing.T) {
+	bs := test_tooshort_ogg
+
+	s, err := vorbis.DecodeF32(bytes.NewReader(bs))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := s.Length(), int64(158848); got != want {
+		t.Errorf("s.Length(): got: %d, want: %d", got, want)
+	}
+}
+
+type reader struct {
+	r io.Reader
+}
+
+func (r *reader) Read(buf []byte) (int, error) {
+	return r.r.Read(buf)
+}
+
+func TestNonSeeker(t *testing.T) {
+	bs := test_tooshort_ogg
+
+	s, err := vorbis.DecodeWithSampleRate(audioContext.SampleRate(), &reader{r: bytes.NewReader(bs)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := s.Length(), int64(0); got != want {
+		t.Errorf("s.Length(): got: %d, want: %d", got, want)
+	}
+
+	if got, want := s.SampleRate(), audioContext.SampleRate(); got != want {
+		t.Errorf("s.SampleRate(): got: %d, want: %d", got, want)
+	}
+}
+
+func TestNonSeekerF32(t *testing.T) {
+	bs := test_tooshort_ogg
+
+	s, err := vorbis.DecodeF32(&reader{r: bytes.NewReader(bs)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := s.Length(), int64(0); got != want {
 		t.Errorf("s.Length(): got: %d, want: %d", got, want)
 	}
 }

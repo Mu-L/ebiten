@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -36,47 +33,34 @@ const (
 
 // stream is an infinite stream of 440 Hz sine wave.
 type stream struct {
-	position  int64
-	remaining []byte
+	pos int64
 }
 
 // Read is io.Reader's Read.
 //
 // Read fills the data with sine wave samples.
 func (s *stream) Read(buf []byte) (int, error) {
-	if len(s.remaining) > 0 {
-		n := copy(buf, s.remaining)
-		s.remaining = s.remaining[n:]
-		return n, nil
+	const bytesPerSample = 8
+
+	n := len(buf) / bytesPerSample * bytesPerSample
+
+	const length = sampleRate / frequency
+	for i := 0; i < n/bytesPerSample; i++ {
+		v := math.Float32bits(float32(math.Sin(2 * math.Pi * float64(s.pos/bytesPerSample+int64(i)) / length)))
+		buf[8*i] = byte(v)
+		buf[8*i+1] = byte(v >> 8)
+		buf[8*i+2] = byte(v >> 16)
+		buf[8*i+3] = byte(v >> 24)
+		buf[8*i+4] = byte(v)
+		buf[8*i+5] = byte(v >> 8)
+		buf[8*i+6] = byte(v >> 16)
+		buf[8*i+7] = byte(v >> 24)
 	}
 
-	var origBuf []byte
-	if len(buf)%4 > 0 {
-		origBuf = buf
-		buf = make([]byte, len(origBuf)+4-len(origBuf)%4)
-	}
+	s.pos += int64(n)
+	s.pos %= length * bytesPerSample
 
-	const length = int64(sampleRate / frequency)
-	p := s.position / 4
-	for i := 0; i < len(buf)/4; i++ {
-		const max = 32767
-		b := int16(math.Sin(2*math.Pi*float64(p)/float64(length)) * max)
-		buf[4*i] = byte(b)
-		buf[4*i+1] = byte(b >> 8)
-		buf[4*i+2] = byte(b)
-		buf[4*i+3] = byte(b >> 8)
-		p++
-	}
-
-	s.position += int64(len(buf))
-	s.position %= length * 4
-
-	if origBuf != nil {
-		n := copy(origBuf, buf)
-		s.remaining = buf[n:]
-		return n, nil
-	}
-	return len(buf), nil
+	return n, nil
 }
 
 // Close is io.Closer's Close.
@@ -97,7 +81,7 @@ func (g *Game) Update() error {
 		// Pass the (infinite) stream to NewPlayer.
 		// After calling Play, the stream never ends as long as the player object lives.
 		var err error
-		g.player, err = g.audioContext.NewPlayer(&stream{})
+		g.player, err = g.audioContext.NewPlayerF32(&stream{})
 		if err != nil {
 			return err
 		}
@@ -107,7 +91,7 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	msg := fmt.Sprintf("TPS: %0.2f\nThis is an example using infinite audio stream.", ebiten.CurrentTPS())
+	msg := fmt.Sprintf("TPS: %0.2f\nThis is an example using infinite audio stream.", ebiten.ActualTPS())
 	ebitenutil.DebugPrint(screen, msg)
 }
 
@@ -117,7 +101,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("Sine Wave (Ebiten Demo)")
+	ebiten.SetWindowTitle("Sine Wave (Ebitengine Demo)")
 	if err := ebiten.RunGame(&Game{}); err != nil {
 		log.Fatal(err)
 	}

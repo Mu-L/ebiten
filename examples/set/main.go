@@ -12,17 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
 	"fmt"
 	"image/color"
 	"log"
-	"math/rand"
-	"time"
+	"math/rand/v2"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -32,10 +28,6 @@ const (
 	screenWidth  = 320
 	screenHeight = 240
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 type Game struct {
 	offscreen *ebiten.Image
@@ -48,13 +40,13 @@ func NewGame() *Game {
 }
 
 func (g *Game) Update() error {
-	w, h := g.offscreen.Size()
-	x := rand.Intn(w)
-	y := rand.Intn(h)
+	s := g.offscreen.Bounds().Size()
+	x := rand.IntN(s.X)
+	y := rand.IntN(s.Y)
 	c := color.RGBA{
-		byte(rand.Intn(256)),
-		byte(rand.Intn(256)),
-		byte(rand.Intn(256)),
+		byte(rand.IntN(256)),
+		byte(rand.IntN(256)),
+		byte(rand.IntN(256)),
 		byte(0xff),
 	}
 	g.offscreen.Set(x, y, c)
@@ -63,7 +55,7 @@ func (g *Game) Update() error {
 
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.DrawImage(g.offscreen, nil)
-	ebitenutil.DebugPrint(screen, fmt.Sprintf("TPS: %0.2f\nFPS: %0.2f", ebiten.CurrentTPS(), ebiten.CurrentFPS()))
+	ebitenutil.DebugPrint(screen, fmt.Sprintf("TPS: %0.2f\nFPS: %0.2f", ebiten.ActualTPS(), ebiten.ActualFPS()))
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
@@ -72,7 +64,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	ebiten.SetWindowSize(screenWidth*2, screenHeight*2)
-	ebiten.SetWindowTitle("Set (Ebiten Demo)")
+	ebiten.SetWindowTitle("Set (Ebitengine Demo)")
 	if err := ebiten.RunGame(NewGame()); err != nil {
 		log.Fatal(err)
 	}

@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -116,6 +113,7 @@ func (c *char) draw(screen *ebiten.Image) {
 	}
 
 	op := &ebiten.DrawImageOptions{}
+	// Use a smaller scale than 1 to shrink the image.
 	op.GeoM.Scale(0.5, 0.5)
 	op.GeoM.Translate(float64(c.x)/unit, float64(c.y)/unit)
 	screen.DrawImage(s, op)
@@ -144,16 +142,16 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	// Draws Background Image
+	// Draws Background Image.
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Scale(0.5, 0.5)
 	screen.DrawImage(backgroundImage, op)
 
-	// Draws the Gopher
+	// Draws the Gopher.
 	g.gopher.draw(screen)
 
-	// Show the message
-	msg := fmt.Sprintf("TPS: %0.2f\nPress the space key to jump.", ebiten.CurrentTPS())
+	// Show the message.
+	msg := fmt.Sprintf("TPS: %0.2f\nPress the space key to jump.", ebiten.ActualTPS())
 	ebitenutil.DebugPrint(screen, msg)
 }
 
@@ -163,7 +161,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("Platformer (Ebiten Demo)")
+	ebiten.SetWindowTitle("Platformer (Ebitengine Demo)")
 	if err := ebiten.RunGame(&Game{}); err != nil {
 		panic(err)
 	}

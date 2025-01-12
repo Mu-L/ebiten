@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -44,9 +41,6 @@ var (
 
 func init() {
 	// Decode an image from the image file's byte slice.
-	// Now the byte slice is generated with //go:generate for Go 1.15 or older.
-	// If you use Go 1.16 or newer, it is strongly recommended to use //go:embed to embed the image file.
-	// See https://pkg.go.dev/embed for more details.
 	img, _, err := image.Decode(bytes.NewReader(images.Tiles_png))
 	if err != nil {
 		log.Fatal(err)
@@ -63,26 +57,26 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	w, _ := tilesImage.Size()
-	tileXNum := w / tileSize
+	w := tilesImage.Bounds().Dx()
+	tileXCount := w / tileSize
 
 	// Draw each tile with each DrawImage call.
 	// As the source images of all DrawImage calls are always same,
 	// this rendering is done very efficiently.
 	// For more detail, see https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#Image.DrawImage
-	const xNum = screenWidth / tileSize
+	const xCount = screenWidth / tileSize
 	for _, l := range g.layers {
 		for i, t := range l {
 			op := &ebiten.DrawImageOptions{}
-			op.GeoM.Translate(float64((i%xNum)*tileSize), float64((i/xNum)*tileSize))
+			op.GeoM.Translate(float64((i%xCount)*tileSize), float64((i/xCount)*tileSize))
 
-			sx := (t % tileXNum) * tileSize
-			sy := (t / tileXNum) * tileSize
+			sx := (t % tileXCount) * tileSize
+			sy := (t / tileXCount) * tileSize
 			screen.DrawImage(tilesImage.SubImage(image.Rect(sx, sy, sx+tileSize, sy+tileSize)).(*ebiten.Image), op)
 		}
 	}
 
-	ebitenutil.DebugPrint(screen, fmt.Sprintf("TPS: %0.2f", ebiten.CurrentTPS()))
+	ebitenutil.DebugPrint(screen, fmt.Sprintf("TPS: %0.2f", ebiten.ActualTPS()))
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
@@ -134,7 +128,7 @@ func main() {
 	}
 
 	ebiten.SetWindowSize(screenWidth*2, screenHeight*2)
-	ebiten.SetWindowTitle("Tiles (Ebiten Demo)")
+	ebiten.SetWindowTitle("Tiles (Ebitengine Demo)")
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}

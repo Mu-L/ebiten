@@ -25,59 +25,104 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/audio/internal/convert"
 )
 
+const (
+	bitDepthInBytesInt16   = 2
+	bitDepthInBytesFloat32 = 4
+)
+
 // Stream is a decoded audio stream.
 type Stream struct {
-	decoded io.ReadSeeker
-	size    int64
+	readSeeker io.ReadSeeker
+	length     int64
+	sampleRate int
 }
 
 // Read is implementation of io.Reader's Read.
 func (s *Stream) Read(p []byte) (int, error) {
-	return s.decoded.Read(p)
+	return s.readSeeker.Read(p)
 }
 
 // Seek is implementation of io.Seeker's Seek.
 //
 // Note that Seek can take long since decoding is a relatively heavy task.
 func (s *Stream) Seek(offset int64, whence int) (int64, error) {
-	return s.decoded.Seek(offset, whence)
+	return s.readSeeker.Seek(offset, whence)
 }
 
 // Length returns the size of decoded stream in bytes.
+//
+// If the source is not io.Seeker, Length returns 0.
 func (s *Stream) Length() int64 {
-	return s.size
+	return s.length
 }
 
-type decoder interface {
-	Read([]float32) (int, error)
-	SetPosition(int64) error
-	Length() int64
-	Channels() int
-	SampleRate() int
+// SampleRate returns the sample rate of the decoded stream.
+func (s *Stream) SampleRate() int {
+	return s.sampleRate
 }
 
-type decoded struct {
-	totalBytes int
-	posInBytes int
-	decoder    decoder
-	decoderr   io.Reader
-}
-
-func (d *decoded) Read(b []byte) (int, error) {
-	if d.decoderr == nil {
-		d.decoderr = convert.NewReaderFromFloat32Reader(d.decoder)
+// DecodeF32 decodes Ogg/Vorbis data to playable stream in 32bit float, little endian, 2 channels (stereo) format.
+//
+// DecodeF32 returns error when decoding fails or IO error happens.
+//
+// The returned Stream's Seek is available only when src is an io.Seeker.
+//
+// A Stream doesn't close src even if src implements io.Closer.
+// Closing the source is src owner's responsibility.
+func DecodeF32(src io.Reader) (*Stream, error) {
+	r, err := oggvorbis.NewReader(src)
+	if err != nil {
+		return nil, err
+	}
+	if r.Channels() != 1 && r.Channels() != 2 {
+		return nil, fmt.Errorf("vorbis: number of channels must be 1 or 2 but was %d", r.Channels())
 	}
 
-	l := d.totalBytes - d.posInBytes
-	if l > len(b) {
-		l = len(b)
+	var s io.ReadSeeker = newFloat32BytesReadSeeker(r)
+	length := r.Length() * int64(r.Channels()) * bitDepthInBytesFloat32
+	if r.Channels() == 1 {
+		s = convert.NewStereoF32(s, true)
+		length *= 2
+	}
+
+	stream := &Stream{
+		readSeeker: s,
+		length:     length,
+		sampleRate: r.SampleRate(),
+	}
+	// Read some data for performance (#297).
+	if _, ok := src.(io.Seeker); ok {
+		if _, err := stream.Read(make([]byte, 65536)); err != nil && err != io.EOF {
+			return nil, err
+		}
+		if _, err := stream.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
+	}
+	return stream, nil
+}
+
+type i16Stream struct {
+	posInBytes   int64
+	vorbisReader *oggvorbis.Reader
+	i16Reader    io.Reader
+}
+
+func (s *i16Stream) Read(b []byte) (int, error) {
+	if s.i16Reader == nil {
+		s.i16Reader = newInt16BytesReaderFromFloat32Reader(s.vorbisReader)
+	}
+
+	l := s.totalBytes() - s.posInBytes
+	if l > int64(len(b)) {
+		l = int64(len(b))
 	}
 	if l < 0 {
 		return 0, io.EOF
 	}
 
 retry:
-	n, err := d.decoderr.Read(b[:l])
+	n, err := s.i16Reader.Read(b[:l])
 	if err != nil && err != io.EOF {
 		return 0, err
 	}
@@ -86,60 +131,65 @@ retry:
 		goto retry
 	}
 
-	d.posInBytes += n
-	if d.posInBytes == d.totalBytes || err == io.EOF {
+	s.posInBytes += int64(n)
+	if s.posInBytes == s.totalBytes() || err == io.EOF {
 		return n, io.EOF
 	}
 	return n, nil
 }
 
-func (d *decoded) Seek(offset int64, whence int) (int64, error) {
+func (s *i16Stream) Seek(offset int64, whence int) (int64, error) {
 	next := int64(0)
 	switch whence {
 	case io.SeekStart:
 		next = offset
 	case io.SeekCurrent:
-		next = int64(d.posInBytes) + offset
+		next = int64(s.posInBytes) + offset
 	case io.SeekEnd:
-		next = int64(d.totalBytes) + offset
+		next = int64(s.totalBytes()) + offset
 	}
-	// pos should be always even
-	next = next / 2 * 2
-	d.posInBytes = int(next)
-	if err := d.decoder.SetPosition(next / int64(d.decoder.Channels()) / 2); err != nil {
+	sampleSize := int64(s.vorbisReader.Channels()) * bitDepthInBytesInt16
+	s.posInBytes = next / sampleSize * sampleSize
+	if err := s.vorbisReader.SetPosition(next / sampleSize); err != nil {
 		return 0, err
 	}
-	d.decoderr = nil
+	s.i16Reader = nil
 	return next, nil
 }
 
-func (d *decoded) Length() int64 {
-	return int64(d.totalBytes)
+func (s *i16Stream) totalBytes() int64 {
+	// TODO: r.Length() returns 0 when the format is unknown.
+	// Should we check that?
+	return s.vorbisReader.Length() * int64(s.vorbisReader.Channels()) * bitDepthInBytesInt16
 }
 
-// decode accepts an ogg stream and returns a decorded stream.
-func decode(in io.Reader) (*decoded, int, int, error) {
+// decodeI16 accepts an ogg stream and returns a decorded stream.
+func decodeI16(in io.Reader) (*i16Stream, error) {
 	r, err := oggvorbis.NewReader(in)
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, err
 	}
-	d := &decoded{
-		// TODO: r.Length() returns 0 when the format is unknown.
-		// Should we check that?
-		totalBytes: int(r.Length()) * r.Channels() * 2, // 2 means 16bit per sample.
-		posInBytes: 0,
-		decoder:    r,
+	if r.Channels() != 1 && r.Channels() != 2 {
+		return nil, fmt.Errorf("vorbis: number of channels must be 1 or 2 but was %d", r.Channels())
 	}
-	if _, err := d.Read(make([]byte, 65536)); err != nil && err != io.EOF {
-		return nil, 0, 0, err
+
+	s := &i16Stream{
+		posInBytes:   0,
+		vorbisReader: r,
 	}
-	if _, err := d.Seek(0, io.SeekStart); err != nil {
-		return nil, 0, 0, err
+	// Read some data for performance (#297).
+	if _, ok := in.(io.Seeker); ok {
+		if _, err := s.Read(make([]byte, 65536)); err != nil && err != io.EOF {
+			return nil, err
+		}
+		if _, err := s.Seek(0, io.SeekStart); err != nil {
+			return nil, err
+		}
 	}
-	return d, r.Channels(), r.SampleRate(), nil
+	return s, nil
 }
 
-// DecodeWithoutResampling decodes Ogg/Vorbis data to playable stream.
+// DecodeWithoutResampling decodes Ogg/Vorbis data to playable stream in signed 16bit integer, little endian, 2 channels (stereo) format.
 //
 // DecodeWithoutResampling returns error when decoding fails or IO error happens.
 //
@@ -148,27 +198,27 @@ func decode(in io.Reader) (*decoded, int, int, error) {
 // A Stream doesn't close src even if src implements io.Closer.
 // Closing the source is src owner's responsibility.
 func DecodeWithoutResampling(src io.Reader) (*Stream, error) {
-	decoded, channelNum, _, err := decode(src)
+	i16Stream, err := decodeI16(src)
 	if err != nil {
 		return nil, err
 	}
-	if channelNum != 1 && channelNum != 2 {
-		return nil, fmt.Errorf("vorbis: number of channels must be 1 or 2 but was %d", channelNum)
+
+	var s io.ReadSeeker = i16Stream
+	length := i16Stream.totalBytes()
+	if i16Stream.vorbisReader.Channels() == 1 {
+		s = convert.NewStereoI16(s, true, false)
+		length *= 2
 	}
-	var s io.ReadSeeker = decoded
-	size := decoded.Length()
-	if channelNum == 1 {
-		s = convert.NewStereo16(s, true, false)
-		size *= 2
-	}
+
 	stream := &Stream{
-		decoded: s,
-		size:    size,
+		readSeeker: s,
+		length:     length,
+		sampleRate: i16Stream.vorbisReader.SampleRate(),
 	}
 	return stream, nil
 }
 
-// DecodeWithSampleRate decodes Ogg/Vorbis data to playable stream.
+// DecodeWithSampleRate decodes Ogg/Vorbis data to playable stream in signed 16bit integer, little endian, 2 channels (stereo) format.
 //
 // DecodeWithSampleRate returns error when decoding fails or IO error happens.
 //
@@ -178,30 +228,35 @@ func DecodeWithoutResampling(src io.Reader) (*Stream, error) {
 //
 // A Stream doesn't close src even if src implements io.Closer.
 // Closing the source is src owner's responsibility.
+//
+// Resampling can be a very heavy task. Stream has a cache for resampling, but the size is limited.
+// Do not expect that Stream has a resampling cache even after whole data is played.
 func DecodeWithSampleRate(sampleRate int, src io.Reader) (*Stream, error) {
-	decoded, channelNum, origSampleRate, err := decode(src)
+	i16Stream, err := decodeI16(src)
 	if err != nil {
 		return nil, err
 	}
-	if channelNum != 1 && channelNum != 2 {
-		return nil, fmt.Errorf("vorbis: number of channels must be 1 or 2 but was %d", channelNum)
+
+	var s io.ReadSeeker = i16Stream
+	length := i16Stream.totalBytes()
+	if i16Stream.vorbisReader.Channels() == 1 {
+		s = convert.NewStereoI16(s, true, false)
+		length *= 2
 	}
-	var s io.ReadSeeker = decoded
-	size := decoded.Length()
-	if channelNum == 1 {
-		s = convert.NewStereo16(s, true, false)
-		size *= 2
-	}
-	if origSampleRate != sampleRate {
-		r := convert.NewResampling(s, size, origSampleRate, sampleRate)
+	if i16Stream.vorbisReader.SampleRate() != sampleRate {
+		r := convert.NewResampling(s, length, i16Stream.vorbisReader.SampleRate(), sampleRate, bitDepthInBytesInt16)
 		s = r
-		size = r.Length()
+		length = r.Length()
 	}
-	stream := &Stream{decoded: s, size: size}
+	stream := &Stream{
+		readSeeker: s,
+		length:     length,
+		sampleRate: sampleRate,
+	}
 	return stream, nil
 }
 
-// Decode decodes Ogg/Vorbis data to playable stream.
+// Decode decodes Ogg/Vorbis data to playable stream in signed 16bit integer, little endian, 2 channels (stereo) format.
 //
 // Decode returns error when decoding fails or IO error happens.
 //

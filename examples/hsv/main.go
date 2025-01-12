@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -26,6 +23,7 @@ import (
 	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/colorm"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/examples/resources/images"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
@@ -102,9 +100,9 @@ func (g *Game) Update() error {
 
 func (g *Game) Draw(screen *ebiten.Image) {
 	// Center the image on the screen.
-	w, h := gophersImage.Size()
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Translate(-float64(w)/2, -float64(h)/2)
+	s := gophersImage.Bounds().Size()
+	op := &colorm.DrawImageOptions{}
+	op.GeoM.Translate(-float64(s.X)/2, -float64(s.Y)/2)
 	op.GeoM.Scale(2, 2)
 	op.GeoM.Translate(float64(screenWidth)/2, float64(screenHeight)/2)
 
@@ -112,15 +110,16 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	hue := float64(g.hue128) * 2 * math.Pi / 128
 	saturation := float64(g.saturation128) / 128
 	value := float64(g.value128) / 128
-	op.ColorM.ChangeHSV(hue, saturation, value)
+	var c colorm.ColorM
+	c.ChangeHSV(hue, saturation, value)
 
 	// Invert the color.
 	if g.inverted {
-		op.ColorM.Scale(-1, -1, -1, 1)
-		op.ColorM.Translate(1, 1, 1, 0)
+		c.Scale(-1, -1, -1, 1)
+		c.Translate(1, 1, 1, 0)
 	}
 
-	screen.DrawImage(gophersImage, op)
+	colorm.DrawImage(screen, gophersImage, c, op)
 
 	// Draw the text of the current status.
 	msgInverted := "false"
@@ -140,9 +139,6 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	// Decode an image from the image file's byte slice.
-	// Now the byte slice is generated with //go:generate for Go 1.15 or older.
-	// If you use Go 1.16 or newer, it is strongly recommended to use //go:embed to embed the image file.
-	// See https://pkg.go.dev/embed for more details.
 	img, _, err := image.Decode(bytes.NewReader(images.Gophers_jpg))
 	if err != nil {
 		log.Fatal(err)
@@ -150,7 +146,7 @@ func main() {
 	gophersImage = ebiten.NewImageFromImage(img)
 
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("HSV (Ebiten Demo)")
+	ebiten.SetWindowTitle("HSV (Ebitengine Demo)")
 	if err := ebiten.RunGame(NewGame()); err != nil {
 		log.Fatal(err)
 	}

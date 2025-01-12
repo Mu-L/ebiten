@@ -19,7 +19,7 @@ import (
 )
 
 // CursorModeType represents a render and coordinate mode of a mouse cursor.
-type CursorModeType = ui.CursorMode
+type CursorModeType int
 
 // CursorModeTypes
 const (
@@ -29,14 +29,36 @@ const (
 )
 
 // CursorShapeType represents a shape of a mouse cursor.
-type CursorShapeType = ui.CursorShape
+type CursorShapeType int
 
 // CursorShapeTypes
 const (
-	CursorShapeDefault   CursorShapeType = CursorShapeType(ui.CursorShapeDefault)
-	CursorShapeText      CursorShapeType = CursorShapeType(ui.CursorShapeText)
-	CursorShapeCrosshair CursorShapeType = CursorShapeType(ui.CursorShapeCrosshair)
-	CursorShapePointer   CursorShapeType = CursorShapeType(ui.CursorShapePointer)
-	CursorShapeEWResize  CursorShapeType = CursorShapeType(ui.CursorShapeEWResize)
-	CursorShapeNSResize  CursorShapeType = CursorShapeType(ui.CursorShapeNSResize)
+	CursorShapeDefault    CursorShapeType = CursorShapeType(ui.CursorShapeDefault)
+	CursorShapeText       CursorShapeType = CursorShapeType(ui.CursorShapeText)
+	CursorShapeCrosshair  CursorShapeType = CursorShapeType(ui.CursorShapeCrosshair)
+	CursorShapePointer    CursorShapeType = CursorShapeType(ui.CursorShapePointer)
+	CursorShapeEWResize   CursorShapeType = CursorShapeType(ui.CursorShapeEWResize)
+	CursorShapeNSResize   CursorShapeType = CursorShapeType(ui.CursorShapeNSResize)
+	CursorShapeNESWResize CursorShapeType = CursorShapeType(ui.CursorShapeNESWResize)
+	CursorShapeNWSEResize CursorShapeType = CursorShapeType(ui.CursorShapeNWSEResize)
+	CursorShapeMove       CursorShapeType = CursorShapeType(ui.CursorShapeMove)
+	CursorShapeNotAllowed CursorShapeType = CursorShapeType(ui.CursorShapeNotAllowed)
 )
+
+// CursorShape returns the current cursor shape.
+//
+// CursorShape returns CursorShapeDefault on mobiles.
+//
+// CursorShape is concurrent-safe.
+func CursorShape() CursorShapeType {
+	return CursorShapeType(ui.Get().CursorShape())
+}
+
+// SetCursorShape sets the cursor shape.
+//
+// If the platform doesn't implement the given shape, the default cursor shape is used.
+//
+// SetCursorShape is concurrent-safe.
+func SetCursorShape(shape CursorShapeType) {
+	ui.Get().SetCursorShape(ui.CursorShape(shape))
+}

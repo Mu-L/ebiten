@@ -20,11 +20,19 @@ import (
 	"time"
 )
 
+const (
+	DefaultTPS  = 60
+	SyncWithFPS = -1
+)
+
 var (
+	// tps represents TPS (ticks per second).
+	tps = DefaultTPS
+
 	lastNow int64
 
-	// lastSystemTime is the last system time in the previous Update.
-	// lastSystemTime indicates the logical time in the game, so this can be bigger than the curren time.
+	// lastSystemTime is the last system time in the previous UpdateFrame.
+	// lastSystemTime indicates the logical time in the game, so this can be bigger than the current time.
 	lastSystemTime int64
 
 	actualFPS   float64
@@ -46,23 +54,14 @@ func init() {
 
 func ActualFPS() float64 {
 	m.Lock()
-	v := actualFPS
-	m.Unlock()
-	return v
+	defer m.Unlock()
+	return actualFPS
 }
 
 func ActualTPS() float64 {
 	m.Lock()
-	v := actualTPS
-	m.Unlock()
-	return v
-}
-
-func max(a, b int64) int64 {
-	if a < b {
-		return b
-	}
-	return a
+	defer m.Unlock()
+	return actualTPS
 }
 
 func calcCountFromTPS(tps int64, now int64) int {
@@ -127,16 +126,14 @@ func updateFPSAndTPS(now int64, count int) {
 	tpsCount = 0
 }
 
-const SyncWithFPS = -1
-
-// Update updates the inner clock state and returns an integer value
-// indicating how many times the game should update based on given tps.
-// tps represents TPS (ticks per second).
-// If tps is SyncWithFPS, Update always returns 1.
-// If tps <= 0 and not SyncWithFPS, Update always returns 0.
+// UpdateFrame updates the inner clock state and returns an integer value
+// indicating how many times the game should update based on the current tps.
 //
-// Update is expected to be called per frame.
-func Update(tps int) int {
+// If tps is SyncWithFPS, UpdateFrame always returns 1.
+// If tps <= 0 and not SyncWithFPS, UpdateFrame always returns 0.
+//
+// UpdateFrame is expected to be called once per frame.
+func UpdateFrame() int {
 	m.Lock()
 	defer m.Unlock()
 
@@ -156,4 +153,16 @@ func Update(tps int) int {
 	updateFPSAndTPS(n, c)
 
 	return c
+}
+
+func SetTPS(newTPS int) {
+	m.Lock()
+	defer m.Unlock()
+	tps = newTPS
+}
+
+func TPS() int {
+	m.Lock()
+	defer m.Unlock()
+	return tps
 }

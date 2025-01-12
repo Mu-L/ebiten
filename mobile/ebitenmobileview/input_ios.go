@@ -12,13 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build ios
-// +build ios
-
 package ebitenmobileview
 
 import (
 	"fmt"
+	"unicode"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/ui"
 )
@@ -51,12 +49,38 @@ func UpdateTouchesOnIOS(phase int, ptr int64, x, y int) {
 	case C.UITouchPhaseBegan, C.UITouchPhaseMoved, C.UITouchPhaseStationary:
 		id := getIDFromPtr(ptr)
 		touches[ui.TouchID(id)] = position{x, y}
-		updateInput()
+		updateInput(nil)
 	case C.UITouchPhaseEnded, C.UITouchPhaseCancelled:
 		id := getIDFromPtr(ptr)
 		delete(ptrToID, ptr)
 		delete(touches, ui.TouchID(id))
-		updateInput()
+		updateInput(nil)
+	default:
+		panic(fmt.Sprintf("ebitenmobileview: invalid phase: %d", phase))
+	}
+}
+
+func UpdatePressesOnIOS(phase int, keyCode int, keyString string) {
+	switch phase {
+	case C.UITouchPhaseBegan, C.UITouchPhaseMoved, C.UITouchPhaseStationary:
+		if key, ok := iosKeyToUIKey[keyCode]; ok {
+			keys[key] = struct{}{}
+		}
+		var runes []rune
+		if phase == C.UITouchPhaseBegan {
+			for _, r := range keyString {
+				if !unicode.IsPrint(r) {
+					continue
+				}
+				runes = append(runes, r)
+			}
+		}
+		updateInput(runes)
+	case C.UITouchPhaseEnded, C.UITouchPhaseCancelled:
+		if key, ok := iosKeyToUIKey[keyCode]; ok {
+			delete(keys, key)
+		}
+		updateInput(nil)
 	default:
 		panic(fmt.Sprintf("ebitenmobileview: invalid phase: %d", phase))
 	}

@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !ebitencbackend
-// +build !ebitencbackend
-
 package gamepad
 
 import (
@@ -25,6 +22,12 @@ import (
 
 	"golang.org/x/sys/windows"
 )
+
+type handleError windows.Handle
+
+func (h handleError) Error() string {
+	return fmt.Sprintf("HANDLE(%d)", h)
+}
 
 var (
 	gameInput = windows.NewLazySystemDLL("GameInput.dll")
@@ -109,11 +112,18 @@ type _GameInputGamepadState struct {
 	rightThumbstickY float32
 }
 
+type _GameInputRumbleParams struct {
+	lowFrequency  float32
+	highFrequency float32
+	leftTrigger   float32
+	rightTrigger  float32
+}
+
 func _GameInputCreate() (*_IGameInput, error) {
 	var gameInput *_IGameInput
 	r, _, _ := procGameInputCreate.Call(uintptr(unsafe.Pointer(&gameInput)))
 	if uint32(r) != uint32(windows.S_OK) {
-		return nil, fmt.Errorf("gamepad: GameInputCreate failed: HRESULT(%d)", uint32(r))
+		return nil, fmt.Errorf("gamepad: GameInputCreate failed: %w", handleError(windows.Handle(uint32(r))))
 	}
 	return gameInput, nil
 }
@@ -155,7 +165,7 @@ func (i *_IGameInput) GetCurrentReading(inputKind _GameInputKind, device *_IGame
 		0, 0)
 	runtime.KeepAlive(device)
 	if uint32(r) != uint32(windows.S_OK) {
-		return nil, fmt.Errorf("gamepad: IGameInput::GetCurrentReading failed: HRESULT(%d)", uint32(r))
+		return nil, fmt.Errorf("gamepad: IGameInput::GetCurrentReading failed: %w", handleError(windows.Handle(uint32(r))))
 	}
 	return reading, nil
 }
@@ -174,7 +184,7 @@ func (i *_IGameInput) RegisterDeviceCallback(device *_IGameInputDevice,
 	runtime.KeepAlive(device)
 	runtime.KeepAlive(callbackToken)
 	if uint32(r) != uint32(windows.S_OK) {
-		return fmt.Errorf("gamepad: IGameInput::RegisterDeviceCallback failed: HRESULT(%d)", uint32(r))
+		return fmt.Errorf("gamepad: IGameInput::RegisterDeviceCallback failed: %w", handleError(windows.Handle(uint32(r))))
 	}
 	return nil
 }
@@ -206,6 +216,11 @@ type _IGameInputDevice_Vtbl struct {
 	ExecuteRawDeviceIoControl       uintptr
 	AcquireExclusiveRawDeviceAccess uintptr
 	ReleaseExclusiveRawDeviceAccess uintptr
+}
+
+func (i *_IGameInputDevice) SetRumbleState(params *_GameInputRumbleParams, timestamp uint64) {
+	_, _, _ = syscall.Syscall(i.vtbl.SetRumbleState, 3, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(params)), uintptr(timestamp))
+	runtime.KeepAlive(params)
 }
 
 type _IGameInputReading struct {
@@ -245,4 +260,9 @@ func (i *_IGameInputReading) GetGamepadState() (_GameInputGamepadState, bool) {
 	var state _GameInputGamepadState
 	r, _, _ := syscall.Syscall(i.vtbl.GetGamepadState, 2, uintptr(unsafe.Pointer(i)), uintptr(unsafe.Pointer(&state)), 0)
 	return state, int32(r) != 0
+}
+
+func (i *_IGameInputReading) Release() uint32 {
+	r, _, _ := syscall.Syscall(i.vtbl.Release, 1, uintptr(unsafe.Pointer(i)), 0, 0)
+	return uint32(r)
 }

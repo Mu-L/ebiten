@@ -16,6 +16,7 @@ package audio_test
 
 import (
 	"bytes"
+	"io"
 	"runtime"
 	"testing"
 	"time"
@@ -40,15 +41,15 @@ func TestGC(t *testing.T) {
 	defer teardown()
 
 	p, _ := context.NewPlayer(bytes.NewReader(make([]byte, 4)))
-	got := audio.PlayersNumForTesting()
+	got := audio.PlayersCountForTesting()
 	if want := 0; got != want {
-		t.Errorf("PlayersNum(): got: %d, want: %d", got, want)
+		t.Errorf("PlayersCountForTesting(): got: %d, want: %d", got, want)
 	}
 
 	p.Play()
-	got = audio.PlayersNumForTesting()
+	got = audio.PlayersCountForTesting()
 	if want := 1; got != want {
-		t.Errorf("PlayersNum() after Play: got: %d, want: %d", got, want)
+		t.Errorf("PlayersCountForTesting() after Play: got: %d, want: %d", got, want)
 	}
 
 	runtime.KeepAlive(p)
@@ -56,7 +57,7 @@ func TestGC(t *testing.T) {
 	runtime.GC()
 
 	for i := 0; i < 10; i++ {
-		got = audio.PlayersNumForTesting()
+		got = audio.PlayersCountForTesting()
 		if want := 0; got == want {
 			return
 		}
@@ -64,7 +65,7 @@ func TestGC(t *testing.T) {
 			t.Error(err)
 		}
 		// 200[ms] should be enough all the bytes are consumed.
-		// TODO: This is a darty hack. Would it be possible to use virtual time?
+		// TODO: This is a dirty hack. Would it be possible to use virtual time?
 		time.Sleep(200 * time.Millisecond)
 	}
 	t.Errorf("time out")
@@ -111,6 +112,57 @@ func TestPauseBeforeInit(t *testing.T) {
 	p.Play()
 	p.Pause()
 	p.Play()
+
+	if err := audio.UpdateForTesting(); err != nil {
+		t.Error(err)
+	}
+}
+
+type emptySource struct{}
+
+func (emptySource) Read(buf []byte) (int, error) {
+	return len(buf), nil
+}
+
+func TestNonSeekableSource(t *testing.T) {
+	if runtime.GOOS == "js" {
+		t.Skip("infinite steams in tests cannot be treated well on browsers")
+	}
+
+	setup()
+	defer teardown()
+
+	p, err := context.NewPlayer(emptySource{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p.Play()
+	p.Pause()
+
+	if err := audio.UpdateForTesting(); err != nil {
+		t.Error(err)
+	}
+}
+
+type uncomparableSource []int
+
+func (uncomparableSource) Read(buf []byte) (int, error) {
+	return 0, io.EOF
+}
+
+// Issue #3039
+func TestUncomparableSource(t *testing.T) {
+	setup()
+	defer teardown()
+
+	p, err := context.NewPlayer(uncomparableSource{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p.Play()
+	p.Pause()
 
 	if err := audio.UpdateForTesting(); err != nil {
 		t.Error(err)

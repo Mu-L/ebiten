@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -102,7 +99,7 @@ func main() {
 	}
 
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("TypeWriter (Ebiten Demo)")
+	ebiten.SetWindowTitle("TypeWriter (Ebitengine Demo)")
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}

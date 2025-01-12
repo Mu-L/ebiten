@@ -18,11 +18,12 @@ import (
 	"encoding/hex"
 	"syscall/js"
 	"time"
+
+	"github.com/hajimehoshi/ebiten/v2/internal/gamepaddb"
 )
 
 var (
 	object = js.Global().Get("Object")
-	go2cpp = js.Global().Get("go2cpp")
 )
 
 type nativeGamepadsImpl struct {
@@ -38,7 +39,7 @@ func (g *nativeGamepadsImpl) init(gamepads *gamepads) error {
 }
 
 func (g *nativeGamepadsImpl) update(gamepads *gamepads) error {
-	// TODO: Use the gamepad events instead of navigator.getGamepads after go2cpp is removed.
+	// TODO: Use the gamepad events instead of navigator.getGamepads.
 
 	defer func() {
 		for k := range g.indices {
@@ -112,11 +113,27 @@ type nativeGamepadImpl struct {
 }
 
 func (g *nativeGamepadImpl) hasOwnStandardLayoutMapping() bool {
-	// With go2cpp, the controller must have the standard
-	if go2cpp.Truthy() {
-		return true
-	}
 	return g.mapping == "standard"
+}
+
+func (g *nativeGamepadImpl) standardAxisInOwnMapping(axis gamepaddb.StandardAxis) mappingInput {
+	if !g.hasOwnStandardLayoutMapping() {
+		return nil
+	}
+	if axis < 0 || int(axis) >= g.axisCount() {
+		return nil
+	}
+	return axisMappingInput{g: g, axis: int(axis)}
+}
+
+func (g *nativeGamepadImpl) standardButtonInOwnMapping(button gamepaddb.StandardButton) mappingInput {
+	if !g.hasOwnStandardLayoutMapping() {
+		return nil
+	}
+	if button < 0 || int(button) >= g.buttonCount() {
+		return nil
+	}
+	return buttonMappingInput{g: g, button: int(button)}
 }
 
 func (g *nativeGamepadImpl) update(gamepads *gamepads) error {
@@ -133,6 +150,10 @@ func (g *nativeGamepadImpl) buttonCount() int {
 
 func (g *nativeGamepadImpl) hatCount() int {
 	return 0
+}
+
+func (g *nativeGamepadImpl) isAxisReady(axis int) bool {
+	return axis >= 0 && axis < g.axisCount()
 }
 
 func (g *nativeGamepadImpl) axisValue(axis int) float64 {
@@ -164,7 +185,7 @@ func (g *nativeGamepadImpl) hatState(hat int) int {
 }
 
 func (g *nativeGamepadImpl) vibrate(duration time.Duration, strongMagnitude float64, weakMagnitude float64) {
-	// vibrationActuator is avaialble on Chrome.
+	// vibrationActuator is available on Chrome.
 	if va := g.value.Get("vibrationActuator"); va.Truthy() {
 		if !va.Get("playEffect").Truthy() {
 			return

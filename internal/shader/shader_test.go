@@ -16,15 +16,14 @@ package shader_test
 
 import (
 	"fmt"
-	"go/parser"
-	"go/token"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/hajimehoshi/ebiten/v2/internal/shader"
+	"github.com/hajimehoshi/ebiten/v2/internal/shaderir"
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir/glsl"
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir/hlsl"
 	"github.com/hajimehoshi/ebiten/v2/internal/shaderir/msl"
@@ -32,31 +31,24 @@ import (
 
 func glslVertexNormalize(str string) string {
 	p := glsl.VertexPrelude(glsl.GLSLVersionDefault)
-	if strings.HasPrefix(str, p) {
-		str = str[len(p):]
-	}
+	str = strings.TrimPrefix(str, p)
 	return strings.TrimSpace(str)
 }
 
 func glslFragmentNormalize(str string) string {
 	p := glsl.FragmentPrelude(glsl.GLSLVersionDefault)
-	if strings.HasPrefix(str, p) {
-		str = str[len(p):]
-	}
+	str = strings.TrimPrefix(str, p)
 	return strings.TrimSpace(str)
 }
 
-func hlslNormalize(str string) string {
-	if strings.HasPrefix(str, hlsl.Prelude) {
-		str = str[len(hlsl.Prelude):]
-	}
+func hlslNormalize(str string, prelude string) string {
+	str = strings.TrimPrefix(str, prelude)
 	return strings.TrimSpace(str)
 }
 
 func metalNormalize(str string) string {
-	if strings.HasPrefix(str, msl.Prelude) {
-		str = str[len(msl.Prelude):]
-	}
+	prelude := msl.Prelude(shaderir.Texels)
+	str = strings.TrimPrefix(str, prelude)
 	return strings.TrimSpace(str)
 }
 
@@ -86,7 +78,7 @@ func TestCompile(t *testing.T) {
 		t.Skip("file open might not be implemented in this environment")
 	}
 
-	files, err := ioutil.ReadDir("testdata")
+	files, err := os.ReadDir("testdata")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +106,7 @@ func TestCompile(t *testing.T) {
 			continue
 		}
 
-		src, err := ioutil.ReadFile(filepath.Join("testdata", n))
+		src, err := os.ReadFile(filepath.Join("testdata", n))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -127,7 +119,7 @@ func TestCompile(t *testing.T) {
 
 		vsn := name + ".expected.vs"
 		if _, ok := fnames[vsn]; ok {
-			vs, err := ioutil.ReadFile(filepath.Join("testdata", vsn))
+			vs, err := os.ReadFile(filepath.Join("testdata", vsn))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -136,7 +128,7 @@ func TestCompile(t *testing.T) {
 
 		fsn := name + ".expected.fs"
 		if _, ok := fnames[fsn]; ok {
-			fs, err := ioutil.ReadFile(filepath.Join("testdata", fsn))
+			fs, err := os.ReadFile(filepath.Join("testdata", fsn))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -149,7 +141,7 @@ func TestCompile(t *testing.T) {
 
 		hlsln := name + ".expected.hlsl"
 		if _, ok := fnames[hlsln]; ok {
-			hlsl, err := ioutil.ReadFile(filepath.Join("testdata", hlsln))
+			hlsl, err := os.ReadFile(filepath.Join("testdata", hlsln))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -158,7 +150,7 @@ func TestCompile(t *testing.T) {
 
 		metaln := name + ".expected.metal"
 		if _, ok := fnames[metaln]; ok {
-			metal, err := ioutil.ReadFile(filepath.Join("testdata", metaln))
+			metal, err := os.ReadFile(filepath.Join("testdata", metaln))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -170,13 +162,7 @@ func TestCompile(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.Name, func(t *testing.T) {
-			fset := token.NewFileSet()
-			f, err := parser.ParseFile(fset, "", tc.Src, parser.AllErrors)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			s, err := shader.Compile(fset, f, "Vertex", "Fragment", 0)
+			s, err := shader.Compile(tc.Src, "Vertex", "Fragment", 0)
 			if err != nil {
 				t.Error(err)
 				return
@@ -194,14 +180,14 @@ func TestCompile(t *testing.T) {
 			}
 
 			if tc.HLSL != nil {
-				h, _ := hlsl.Compile(s)
-				if got, want := hlslNormalize(h), hlslNormalize(string(tc.HLSL)); got != want {
+				vs, _, prelude := hlsl.Compile(s)
+				if got, want := hlslNormalize(vs, prelude), hlslNormalize(string(tc.HLSL), prelude); got != want {
 					compare(t, "HLSL", got, want)
 				}
 			}
 
 			if tc.Metal != nil {
-				m := msl.Compile(s, "Vertex", "Fragment")
+				m := msl.Compile(s)
 				if got, want := metalNormalize(m), metalNormalize(string(tc.Metal)); got != want {
 					compare(t, "Metal", got, want)
 				}
@@ -209,7 +195,7 @@ func TestCompile(t *testing.T) {
 
 			// Just check that Compile doesn't cause panic.
 			// TODO: Should the results be tested?
-			msl.Compile(s, "Vertex", "Fragmentp")
+			msl.Compile(s)
 		})
 	}
 }

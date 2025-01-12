@@ -12,15 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
+	"flag"
 	"fmt"
 	_ "image/jpeg"
 	"log"
+	"runtime"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -54,10 +53,6 @@ func NewGame() *Game {
 }
 
 func (g *Game) Update() error {
-	// TODO: DeviceScaleFactor() might return different values for different monitors.
-	// Add a mode to adjust the screen size along with the current device scale (#705).
-	// Now this example uses the device scale initialized at the beginning of this application.
-
 	if g.highDPIImage != nil {
 		return nil
 	}
@@ -78,9 +73,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		return
 	}
 
-	sw, sh := screen.Size()
+	sw, sh := screen.Bounds().Dx(), screen.Bounds().Dy()
 
-	w, h := g.highDPIImage.Size()
+	w, h := g.highDPIImage.Bounds().Dx(), g.highDPIImage.Bounds().Dy()
 	op := &ebiten.DrawImageOptions{}
 
 	// Move the images's center to the upper left corner.
@@ -91,7 +86,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	// Scale the image by the device ratio so that the rendering result can be same
 	// on various (different-DPI) environments.
-	scale := ebiten.DeviceScaleFactor()
+	scale := ebiten.Monitor().DeviceScaleFactor()
 	op.GeoM.Scale(scale, scale)
 
 	// Move the image's center to the screen's center.
@@ -100,20 +95,35 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	op.Filter = ebiten.FilterLinear
 	screen.DrawImage(g.highDPIImage, op)
 
-	ebitenutil.DebugPrint(screen, fmt.Sprintf("(Init) Device Scale Ratio: %0.2f", scale))
+	msg := fmt.Sprintf("Device Scale Ratio: %0.2f", scale)
+	if runtime.GOOS == "js" {
+		if !*flagDisable {
+			msg += "\nHiDPI rendering is enabled. You can disable HiDPI by -disable flag."
+		} else {
+			msg += "\nHiDPI rendering is disabled."
+		}
+	}
+	// TODO: The texts might be too small. Improve legibility.
+	ebitenutil.DebugPrint(screen, msg)
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 	// The unit of outsideWidth/Height is device-independent pixels.
 	// By multiplying them by the device scale factor, we can get a hi-DPI screen size.
-	s := ebiten.DeviceScaleFactor()
+	s := ebiten.Monitor().DeviceScaleFactor()
 	return int(float64(outsideWidth) * s), int(float64(outsideHeight) * s)
 }
 
+var flagDisable = flag.Bool("disable", false, "disables HiDPI rendering (only on browsers)")
+
 func main() {
+	flag.Parse()
+
 	ebiten.SetWindowSize(640, 480)
-	ebiten.SetWindowTitle("High DPI (Ebiten Demo)")
-	if err := ebiten.RunGame(NewGame()); err != nil {
+	ebiten.SetWindowTitle("High DPI (Ebitengine Demo)")
+	op := &ebiten.RunGameOptions{}
+	op.DisableHiDPI = *flagDisable
+	if err := ebiten.RunGameWithOptions(NewGame(), op); err != nil {
 		log.Fatal(err)
 	}
 }

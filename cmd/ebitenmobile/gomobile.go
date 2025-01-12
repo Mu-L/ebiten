@@ -15,15 +15,30 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"runtime/debug"
+
+	// Add a dependency on gomobile in order to get the version via debug.ReadBuildInfo().
+	_ "github.com/ebitengine/gomobile/geom"
 )
 
-const gomobileHash = "8578da9835fd365e78a6e63048c103b27a53a82c"
+//go:embed gobind.go
+var gobind_go []byte
+
+//go:embed _files/EbitenViewController.m
+var objcM []byte
+
+//go:embed _files/EbitenView.java
+var viewJava []byte
+
+//go:embed _files/EbitenSurfaceView.java
+var surfaceViewJava []byte
 
 func runCommand(command string, args []string, env []string) error {
 	if buildX || buildN {
@@ -62,12 +77,7 @@ func removeAll(path string) error {
 }
 
 func runGo(args ...string) error {
-	// TODO: Remove this after Ebiten drops the support of Go 1.15 and older.
-	// GO111MODULE is on by default as of Go 1.16.
-	env := []string{
-		"GO111MODULE=on",
-	}
-	return runCommand("go", args, env)
+	return runCommand("go", args, nil)
 }
 
 // exe adds the .exe extension to the given filename.
@@ -80,7 +90,7 @@ func exe(filename string) string {
 }
 
 func prepareGomobileCommands() (string, error) {
-	tmp, err := ioutil.TempDir("", "ebitenmobile-")
+	tmp, err := os.MkdirTemp("", "ebitenmobile-")
 	if err != nil {
 		return "", err
 	}
@@ -111,60 +121,91 @@ func prepareGomobileCommands() (string, error) {
 		return tmp, err
 	}
 	defer func() {
-		os.Chdir(pwd)
+		_ = os.Chdir(pwd)
 	}()
 
 	const (
 		modname   = "ebitenmobiletemporary"
-		buildtags = "//go:build tools" +
-			"\n// +build tools"
+		buildtags = "//go:build tools"
 	)
 	if err := runGo("mod", "init", modname); err != nil {
 		return tmp, err
 	}
-	if err := ioutil.WriteFile("tools.go", []byte(fmt.Sprintf(`%s
+	if err := os.WriteFile("tools.go", []byte(fmt.Sprintf(`%s
 
 package %s
 
 import (
-	_ "golang.org/x/mobile/cmd/gobind"
-	_ "golang.org/x/mobile/cmd/gomobile"
+	_ "github.com/ebitengine/gomobile/cmd/gobind"
+	_ "github.com/ebitengine/gomobile/cmd/gomobile"
 )
 `, buildtags, modname)), 0644); err != nil {
 		return tmp, err
 	}
 
-	// To record gomobile to go.sum for Go 1.16 and later, go-get gomobile instaed of golang.org/x/mobile (#1487).
+	h, err := gomobileHash()
+	if err != nil {
+		return tmp, err
+	}
+
+	// To record gomobile to go.sum for Go 1.16 and later, go-get gomobile instead of github.com/ebitengine/gomobile (#1487).
 	// This also records gobind as gomobile depends on gobind indirectly.
 	// Using `...` doesn't work on Windows since mobile/internal/mobileinit cannot be compiled on Windows w/o Cgo (#1493).
-	if err := runGo("get", "golang.org/x/mobile/cmd/gomobile@"+gomobileHash); err != nil {
+	if err := runGo("get", "github.com/ebitengine/gomobile/cmd/gomobile@"+h); err != nil {
 		return tmp, err
 	}
 	if localgm := os.Getenv("EBITENMOBILE_GOMOBILE"); localgm != "" {
 		if !filepath.IsAbs(localgm) {
 			localgm = filepath.Join(pwd, localgm)
 		}
-		if err := runGo("mod", "edit", "-replace=golang.org/x/mobile="+localgm); err != nil {
+		if err := runGo("mod", "edit", "-replace=github.com/ebitengine/gomobile="+localgm); err != nil {
 			return tmp, err
 		}
+	}
+	// runtime.Version() is the current executing Go version. For example, this is the version of the toolchain directive in go.mod.
+	// This might differ from the Go command version under the temporary directory.
+	// To avoid the version mismatch, set the toolchain explicitly (#3086).
+	t, err := toolchainParameter()
+	if err != nil {
+		return tmp, err
+	}
+	if err := runGo("mod", "edit", "-toolchain="+t); err != nil {
+		return tmp, err
 	}
 	if err := runGo("mod", "tidy"); err != nil {
 		return tmp, err
 	}
-	if err := runGo("build", "-o", exe(filepath.Join("bin", "gomobile")), "golang.org/x/mobile/cmd/gomobile"); err != nil {
+	if err := runGo("build", "-o", exe(filepath.Join("bin", "gomobile")), "github.com/ebitengine/gomobile/cmd/gomobile"); err != nil {
 		return tmp, err
 	}
-	if err := runGo("build", "-o", exe(filepath.Join("bin", "gobind-original")), "golang.org/x/mobile/cmd/gobind"); err != nil {
+	if err := runGo("build", "-o", exe(filepath.Join("bin", "gobind-original")), "github.com/ebitengine/gomobile/cmd/gobind"); err != nil {
 		return tmp, err
 	}
 
 	if err := os.Mkdir("src", 0755); err != nil {
 		return tmp, err
 	}
-	if err := ioutil.WriteFile(filepath.Join("src", "gobind.go"), gobindsrc, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join("src", "gobind.go"), gobind_go, 0644); err != nil {
 		return tmp, err
 	}
 
+	if err := os.Mkdir(filepath.Join("src", "_files"), 0755); err != nil {
+		return tmp, err
+	}
+	if err := os.WriteFile(filepath.Join("src", "_files", "EbitenViewController.m"), objcM, 0644); err != nil {
+		return tmp, err
+	}
+	if err := os.WriteFile(filepath.Join("src", "_files", "EbitenView.java"), viewJava, 0644); err != nil {
+		return tmp, err
+	}
+	if err := os.WriteFile(filepath.Join("src", "_files", "EbitenSurfaceView.java"), surfaceViewJava, 0644); err != nil {
+		return tmp, err
+	}
+
+	// The newly added Go files like gobind.go might add new dependencies.
+	if err := runGo("mod", "tidy"); err != nil {
+		return tmp, err
+	}
 	if err := runGo("build", "-o", exe(filepath.Join("bin", "gobind")), "-tags", "ebitenmobilegobind", filepath.Join("src", "gobind.go")); err != nil {
 		return tmp, err
 	}
@@ -174,4 +215,27 @@ import (
 	}
 
 	return tmp, nil
+}
+
+func toolchainParameter() (string, error) {
+	pattern := regexp.MustCompile(`\bgo\d+\.\d+(\.\d+)?`)
+	rawVersion := runtime.Version()
+	m := pattern.FindStringSubmatch(rawVersion)
+	if len(m) == 0 {
+		return "", fmt.Errorf("ebitenmobile: unexpected version: %s", rawVersion)
+	}
+	return m[0], nil
+}
+
+func gomobileHash() (string, error) {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "", fmt.Errorf("ebitenmobile: debug.ReadBuildInfo failed")
+	}
+	for _, m := range info.Deps {
+		if m.Path == "github.com/ebitengine/gomobile" {
+			return m.Version, nil
+		}
+	}
+	return "", fmt.Errorf("ebitenmobile: getting the gomobile version failed")
 }

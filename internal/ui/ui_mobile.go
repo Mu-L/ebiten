@@ -12,40 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build (android || ios) && !ebitencbackend
-// +build android ios
-// +build !ebitencbackend
+//go:build android || ios
 
 package ui
 
 import (
+	stdcontext "context"
 	"fmt"
+	"runtime"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
-	"unicode"
 
-	"golang.org/x/mobile/app"
-	"golang.org/x/mobile/event/key"
-	"golang.org/x/mobile/event/lifecycle"
-	"golang.org/x/mobile/event/paint"
-	"golang.org/x/mobile/event/size"
-	"golang.org/x/mobile/event/touch"
-	"golang.org/x/mobile/gl"
-
-	"github.com/hajimehoshi/ebiten/v2/internal/devicescale"
 	"github.com/hajimehoshi/ebiten/v2/internal/gamepad"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicscommand"
 	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver"
-	"github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/opengl"
-	"github.com/hajimehoshi/ebiten/v2/internal/hooks"
+	"github.com/hajimehoshi/ebiten/v2/internal/hook"
 	"github.com/hajimehoshi/ebiten/v2/internal/restorable"
-	"github.com/hajimehoshi/ebiten/v2/internal/thread"
 )
 
 var (
-	glContextCh = make(chan gl.Context, 1)
-
 	// renderCh receives when updating starts.
 	renderCh = make(chan struct{})
 
@@ -53,22 +39,23 @@ var (
 	renderEndCh = make(chan struct{})
 )
 
-func init() {
-	theUI.userInterfaceImpl = userInterfaceImpl{
-		foreground: 1,
-		errCh:      make(chan error),
+func (u *UserInterface) init() error {
+	u.userInterfaceImpl = userInterfaceImpl{
+		graphicsLibraryInitCh: make(chan struct{}),
+		errCh:                 make(chan error),
 
 		// Give a default outside size so that the game can start without initializing them.
 		outsideWidth:  640,
 		outsideHeight: 480,
 	}
-	theUI.input.ui = &theUI.userInterfaceImpl
+	u.foreground.Store(true)
+	return nil
 }
 
 // Update is called from mobile/ebitenmobileview.
 //
 // Update must be called on the rendering thread.
-func (u *userInterfaceImpl) Update() error {
+func (u *UserInterface) Update() error {
 	select {
 	case err := <-u.errCh:
 		return err
@@ -83,184 +70,69 @@ func (u *userInterfaceImpl) Update() error {
 		return err
 	}
 
+	ctx, cancel := stdcontext.WithCancel(stdcontext.Background())
+	defer cancel()
+
 	renderCh <- struct{}{}
 	go func() {
 		<-renderEndCh
-		u.t.Stop()
+		cancel()
 	}()
-	u.t.Loop()
+
+	graphicscommand.LoopRenderThread(ctx)
 	return nil
 }
 
 type userInterfaceImpl struct {
-	graphicsDriver graphicsdriver.Graphics
+	graphicsDriver        graphicsdriver.Graphics
+	graphicsLibraryInitCh chan struct{}
 
 	outsideWidth  float64
 	outsideHeight float64
 
-	foreground int32
+	foreground atomic.Bool
 	errCh      chan error
-
-	// Used for gomobile-build
-	gbuildWidthPx   int
-	gbuildHeightPx  int
-	setGBuildSizeCh chan struct{}
-	once            sync.Once
 
 	context *context
 
-	input Input
+	inputState InputState
+	touches    []TouchForInput
 
-	fpsMode         FPSModeType
-	renderRequester RenderRequester
+	fpsMode  atomic.Int32
+	renderer Renderer
 
-	t *thread.OSThread
+	strictContextRestoration     atomic.Bool
+	strictContextRestorationOnce sync.Once
+
+	// uiView is used only on iOS.
+	uiView atomic.Uintptr
 
 	m sync.RWMutex
 }
 
-func deviceScale() float64 {
-	return devicescale.GetAt(0, 0)
-}
-
-// appMain is the main routine for gomobile-build mode.
-func (u *userInterfaceImpl) appMain(a app.App) {
-	var glctx gl.Context
-	var sizeInited bool
-
-	touches := map[touch.Sequence]Touch{}
-	keys := map[Key]struct{}{}
-
-	for e := range a.Events() {
-		var updateInput bool
-		var runes []rune
-
-		switch e := a.Filter(e).(type) {
-		case lifecycle.Event:
-			switch e.Crosses(lifecycle.StageVisible) {
-			case lifecycle.CrossOn:
-				if err := u.SetForeground(true); err != nil {
-					// There are no other ways than panicking here.
-					panic(err)
-				}
-				restorable.OnContextLost()
-				glctx, _ = e.DrawContext.(gl.Context)
-				// Assume that glctx is always a same instance.
-				// Then, only once initializing should be enough.
-				if glContextCh != nil {
-					glContextCh <- glctx
-					glContextCh = nil
-				}
-				a.Send(paint.Event{})
-			case lifecycle.CrossOff:
-				if err := u.SetForeground(false); err != nil {
-					// There are no other ways than panicking here.
-					panic(err)
-				}
-				glctx = nil
-			}
-		case size.Event:
-			u.setGBuildSize(e.WidthPx, e.HeightPx)
-			sizeInited = true
-		case paint.Event:
-			if !sizeInited {
-				a.Send(paint.Event{})
-				continue
-			}
-			if glctx == nil || e.External {
-				continue
-			}
-			renderCh <- struct{}{}
-			<-renderEndCh
-			a.Publish()
-			a.Send(paint.Event{})
-		case touch.Event:
-			if !sizeInited {
-				continue
-			}
-			switch e.Type {
-			case touch.TypeBegin, touch.TypeMove:
-				s := deviceScale()
-				x, y := float64(e.X)/s, float64(e.Y)/s
-				// TODO: Is it ok to cast from int64 to int here?
-				touches[e.Sequence] = Touch{
-					ID: TouchID(e.Sequence),
-					X:  int(x),
-					Y:  int(y),
-				}
-			case touch.TypeEnd:
-				delete(touches, e.Sequence)
-			}
-			updateInput = true
-		case key.Event:
-			k, ok := gbuildKeyToUIKey[e.Code]
-			if ok {
-				switch e.Direction {
-				case key.DirPress, key.DirNone:
-					keys[k] = struct{}{}
-				case key.DirRelease:
-					delete(keys, k)
-				}
-			}
-
-			switch e.Direction {
-			case key.DirPress, key.DirNone:
-				if e.Rune != -1 && unicode.IsPrint(e.Rune) {
-					runes = []rune{e.Rune}
-				}
-			}
-			updateInput = true
-		}
-
-		if updateInput {
-			var ts []Touch
-			for _, t := range touches {
-				ts = append(ts, t)
-			}
-			u.input.update(keys, runes, ts)
-		}
-	}
-}
-
-func (u *userInterfaceImpl) SetForeground(foreground bool) error {
-	var v int32
-	if foreground {
-		v = 1
-	}
-	atomic.StoreInt32(&u.foreground, v)
+func (u *UserInterface) SetForeground(foreground bool) error {
+	u.foreground.Store(foreground)
 
 	if foreground {
-		return hooks.ResumeAudio()
+		return hook.ResumeAudio()
 	} else {
-		return hooks.SuspendAudio()
+		return hook.SuspendAudio()
 	}
 }
 
-func (u *userInterfaceImpl) Run(game Game) error {
-	u.setGBuildSizeCh = make(chan struct{})
-	go func() {
-		if err := u.run(game, true); err != nil {
-			// As mobile apps never ends, Loop can't return. Just panic here.
-			panic(err)
-		}
-	}()
-	app.Main(u.appMain)
-	return nil
+func (u *UserInterface) Run(game Game, options *RunOptions) error {
+	return fmt.Errorf("internal/ui: Run is not implemented for GOOS=%s", runtime.GOOS)
 }
 
-func RunWithoutMainLoop(game Game) {
-	theUI.runWithoutMainLoop(game)
-}
-
-func (u *userInterfaceImpl) runWithoutMainLoop(game Game) {
+func (u *UserInterface) RunWithoutMainLoop(game Game, options *RunOptions) {
 	go func() {
-		if err := u.run(game, false); err != nil {
+		if err := u.runMobile(game, options); err != nil {
 			u.errCh <- err
 		}
 	}()
 }
 
-func (u *userInterfaceImpl) run(game Game, mainloop bool) (err error) {
+func (u *UserInterface) runMobile(game Game, options *RunOptions) (err error) {
 	// Convert the panic to a regular error so that Java/Objective-C layer can treat this easily e.g., for
 	// Crashlytics. A panic is treated as SIGABRT, and there is no way to handle this on Java/Objective-C layer
 	// unfortunately.
@@ -271,28 +143,26 @@ func (u *userInterfaceImpl) run(game Game, mainloop bool) (err error) {
 		}
 	}()
 
+	graphicscommand.SetOSThreadAsRenderThread()
+
+	u.setRunning(true)
+	defer u.setRunning(false)
+
 	u.context = newContext(game)
-	g, err := newGraphicsDriver(&graphicsDriverCreatorImpl{
-		gomobileBuild: mainloop,
-	})
+
+	g, lib, err := newGraphicsDriver(&graphicsDriverCreatorImpl{
+		colorSpace: options.ColorSpace,
+	}, options.GraphicsLibrary)
 	if err != nil {
 		return err
 	}
 	u.graphicsDriver = g
-
-	if mainloop {
-		// When gomobile-build is used, GL functions must be called via
-		// gl.Context so that they are called on the appropriate thread.
-		ctx := <-glContextCh
-		g.(*opengl.Graphics).SetGomobileGLContext(ctx)
+	u.setGraphicsLibrary(lib)
+	close(u.graphicsLibraryInitCh)
+	if options.StrictContextRestoration {
+		u.strictContextRestoration.Store(true)
 	} else {
-		u.t = thread.NewOSThread()
-		graphicscommand.SetRenderingThread(u.t)
-	}
-
-	// If gomobile-build is used, wait for the outside size fixed.
-	if u.setGBuildSizeCh != nil {
-		<-u.setGBuildSizeCh
+		restorable.Disable()
 	}
 
 	for {
@@ -303,172 +173,185 @@ func (u *userInterfaceImpl) run(game Game, mainloop bool) (err error) {
 }
 
 // outsideSize must be called on the same goroutine as update().
-func (u *userInterfaceImpl) outsideSize() (float64, float64) {
-	var outsideWidth, outsideHeight float64
-
+func (u *UserInterface) outsideSize() (float64, float64) {
 	u.m.RLock()
-	if u.gbuildWidthPx == 0 || u.gbuildHeightPx == 0 {
-		outsideWidth = u.outsideWidth
-		outsideHeight = u.outsideHeight
-	} else {
-		// gomobile build
-		d := deviceScale()
-		outsideWidth = float64(u.gbuildWidthPx) / d
-		outsideHeight = float64(u.gbuildHeightPx) / d
-	}
-	u.m.RUnlock()
+	defer u.m.RUnlock()
 
-	return outsideWidth, outsideHeight
+	return u.outsideWidth, u.outsideHeight
 }
 
-func (u *userInterfaceImpl) update() error {
+func (u *UserInterface) update() error {
 	<-renderCh
 	defer func() {
 		renderEndCh <- struct{}{}
 	}()
 
 	w, h := u.outsideSize()
-	if err := u.context.updateFrame(u.graphicsDriver, w, h, deviceScale()); err != nil {
+	if err := u.context.updateFrame(u.graphicsDriver, w, h, theMonitor.DeviceScaleFactor(), u); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (u *userInterfaceImpl) ScreenSizeInFullscreen() (int, int) {
-	// TODO: This function should return gbuildWidthPx, gbuildHeightPx,
-	// but these values are not initialized until the main loop starts.
-	return 0, 0
-}
-
 // SetOutsideSize is called from mobile/ebitenmobileview.
 //
 // SetOutsideSize is concurrent safe.
-func (u *userInterfaceImpl) SetOutsideSize(outsideWidth, outsideHeight float64) {
+func (u *UserInterface) SetOutsideSize(outsideWidth, outsideHeight float64) {
 	u.m.Lock()
+	defer u.m.Unlock()
 	if u.outsideWidth != outsideWidth || u.outsideHeight != outsideHeight {
 		u.outsideWidth = outsideWidth
 		u.outsideHeight = outsideHeight
 	}
-	u.m.Unlock()
 }
 
-func (u *userInterfaceImpl) setGBuildSize(widthPx, heightPx int) {
-	u.m.Lock()
-	u.gbuildWidthPx = widthPx
-	u.gbuildHeightPx = heightPx
-	u.m.Unlock()
-
-	u.once.Do(func() {
-		close(u.setGBuildSizeCh)
-	})
-}
-
-func (u *userInterfaceImpl) adjustPosition(x, y int) (int, int) {
-	xf, yf := u.context.adjustPosition(float64(x), float64(y), deviceScale())
-	return int(xf), int(yf)
-}
-
-func (u *userInterfaceImpl) CursorMode() CursorMode {
+func (u *UserInterface) CursorMode() CursorMode {
 	return CursorModeHidden
 }
 
-func (u *userInterfaceImpl) SetCursorMode(mode CursorMode) {
+func (u *UserInterface) SetCursorMode(mode CursorMode) {
 	// Do nothing
 }
 
-func (u *userInterfaceImpl) CursorShape() CursorShape {
+func (u *UserInterface) CursorShape() CursorShape {
 	return CursorShapeDefault
 }
 
-func (u *userInterfaceImpl) SetCursorShape(shape CursorShape) {
+func (u *UserInterface) SetCursorShape(shape CursorShape) {
 	// Do nothing
 }
 
-func (u *userInterfaceImpl) IsFullscreen() bool {
+func (u *UserInterface) IsFullscreen() bool {
 	return false
 }
 
-func (u *userInterfaceImpl) SetFullscreen(fullscreen bool) {
+func (u *UserInterface) SetFullscreen(fullscreen bool) {
 	// Do nothing
 }
 
-func (u *userInterfaceImpl) IsFocused() bool {
-	return atomic.LoadInt32(&u.foreground) != 0
+func (u *UserInterface) IsFocused() bool {
+	return u.foreground.Load()
 }
 
-func (u *userInterfaceImpl) IsRunnableOnUnfocused() bool {
+func (u *UserInterface) IsRunnableOnUnfocused() bool {
 	return false
 }
 
-func (u *userInterfaceImpl) SetRunnableOnUnfocused(runnableOnUnfocused bool) {
+func (u *UserInterface) SetRunnableOnUnfocused(runnableOnUnfocused bool) {
 	// Do nothing
 }
 
-func (u *userInterfaceImpl) SetFPSMode(mode FPSModeType) {
-	u.fpsMode = mode
-	u.updateExplicitRenderingModeIfNeeded()
+func (u *UserInterface) FPSMode() FPSModeType {
+	return FPSModeType(u.fpsMode.Load())
 }
 
-func (u *userInterfaceImpl) updateExplicitRenderingModeIfNeeded() {
-	if u.renderRequester == nil {
+func (u *UserInterface) SetFPSMode(mode FPSModeType) {
+	u.fpsMode.Store(int32(mode))
+	u.updateExplicitRenderingModeIfNeeded(mode)
+}
+
+func (u *UserInterface) updateExplicitRenderingModeIfNeeded(fpsMode FPSModeType) {
+	if u.renderer == nil {
 		return
 	}
-	u.renderRequester.SetExplicitRenderingMode(u.fpsMode == FPSModeVsyncOffMinimum)
+	u.renderer.SetExplicitRenderingMode(fpsMode == FPSModeVsyncOffMinimum)
 }
 
-func (u *userInterfaceImpl) DeviceScaleFactor() float64 {
-	return deviceScale()
+func (u *UserInterface) readInputState(inputState *InputState) {
+	u.m.Lock()
+	defer u.m.Unlock()
+	u.inputState.copyAndReset(inputState)
 }
 
-func (u *userInterfaceImpl) SetScreenTransparent(transparent bool) {
-	// Do nothing
-}
-
-func (u *userInterfaceImpl) IsScreenTransparent() bool {
-	return false
-}
-
-func (u *userInterfaceImpl) resetForTick() {
-	u.input.resetForTick()
-}
-
-func (u *userInterfaceImpl) SetInitFocused(focused bool) {
-	// Do nothing
-}
-
-func (u *userInterfaceImpl) Input() *Input {
-	return &u.input
-}
-
-func (u *userInterfaceImpl) Window() Window {
+func (u *UserInterface) Window() Window {
 	return &nullWindow{}
 }
 
-type Touch struct {
-	ID TouchID
-	X  int
-	Y  int
+type Monitor struct {
+	width             int
+	height            int
+	deviceScaleFactor float64
+	inited            atomic.Bool
+
+	m sync.Mutex
 }
 
-func (u *userInterfaceImpl) UpdateInput(keys map[Key]struct{}, runes []rune, touches []Touch) {
-	u.input.update(keys, runes, touches)
-	if u.fpsMode == FPSModeVsyncOffMinimum {
-		u.renderRequester.RequestRenderIfNeeded()
+var theMonitor = &Monitor{}
+
+func (m *Monitor) Name() string {
+	return ""
+}
+
+func (m *Monitor) ensureInit() {
+	if m.inited.Load() {
+		return
+	}
+
+	m.m.Lock()
+	defer m.m.Unlock()
+	// Re-check the state since the state might be changed while locking.
+	if m.inited.Load() {
+		return
+	}
+	width, height, scale, ok := theUI.displayInfo()
+	if !ok {
+		return
+	}
+	m.width = width
+	m.height = height
+	m.deviceScaleFactor = scale
+	m.inited.Store(true)
+}
+
+func (m *Monitor) DeviceScaleFactor() float64 {
+	m.ensureInit()
+	return m.deviceScaleFactor
+}
+
+func (m *Monitor) Size() (int, int) {
+	m.ensureInit()
+	return m.width, m.height
+}
+
+func (u *UserInterface) AppendMonitors(mons []*Monitor) []*Monitor {
+	return append(mons, theMonitor)
+}
+
+func (u *UserInterface) Monitor() *Monitor {
+	return theMonitor
+}
+
+func (u *UserInterface) UpdateInput(keys map[Key]struct{}, runes []rune, touches []TouchForInput) {
+	u.updateInputStateFromOutside(keys, runes, touches)
+	if FPSModeType(u.fpsMode.Load()) == FPSModeVsyncOffMinimum {
+		u.renderer.RequestRenderIfNeeded()
 	}
 }
 
-type RenderRequester interface {
+type Renderer interface {
 	SetExplicitRenderingMode(explicitRendering bool)
 	RequestRenderIfNeeded()
 }
 
-func (u *userInterfaceImpl) SetRenderRequester(renderRequester RenderRequester) {
-	u.renderRequester = renderRequester
-	u.updateExplicitRenderingModeIfNeeded()
+func (u *UserInterface) SetRenderer(renderer Renderer) {
+	u.renderer = renderer
+	u.updateExplicitRenderingModeIfNeeded(FPSModeType(u.fpsMode.Load()))
 }
 
-func (u *userInterfaceImpl) ScheduleFrame() {
-	if u.renderRequester != nil && u.fpsMode == FPSModeVsyncOffMinimum {
-		u.renderRequester.RequestRenderIfNeeded()
+func (u *UserInterface) ScheduleFrame() {
+	if u.renderer != nil && FPSModeType(u.fpsMode.Load()) == FPSModeVsyncOffMinimum {
+		u.renderer.RequestRenderIfNeeded()
 	}
+}
+
+func (u *UserInterface) updateIconIfNeeded() error {
+	return nil
+}
+
+func (u *UserInterface) UsesStrictContextRestoration() bool {
+	return u.strictContextRestoration.Load()
+}
+
+func IsScreenTransparentAvailable() bool {
+	return false
 }

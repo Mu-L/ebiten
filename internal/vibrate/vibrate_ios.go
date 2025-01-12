@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build ios && !ebitencbackend
-// +build ios,!ebitencbackend
-
 package vibrate
 
 // #cgo CFLAGS: -x objective-c

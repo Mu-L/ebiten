@@ -13,19 +13,15 @@
 // limitations under the License.
 
 //go:build ignore
-// +build ignore
 
 package main
 
 import (
-	"errors"
 	"fmt"
 	"image/color"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
-
-var regularTermination = errors.New("regular termination")
 
 type Game struct {
 	count int
@@ -34,7 +30,7 @@ type Game struct {
 func (g *Game) Update() error {
 	g.count++
 	if g.count == 16 {
-		return regularTermination
+		return ebiten.Termination
 	}
 
 	w, h := 256+g.count, 256+g.count
@@ -72,7 +68,7 @@ func (g *Game) Layout(width, height int) (int, int) {
 }
 
 func main() {
-	if err := ebiten.RunGame(&Game{}); err != nil && err != regularTermination {
+	if err := ebiten.RunGame(&Game{}); err != nil {
 		panic(err)
 	}
 }

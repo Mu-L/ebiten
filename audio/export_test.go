@@ -16,8 +16,8 @@ package audio
 
 import (
 	"io"
-	"io/ioutil"
 	"sync"
+	"time"
 )
 
 type (
@@ -38,7 +38,7 @@ func (c *dummyContext) NewPlayer(r io.Reader) player {
 }
 
 func (c *dummyContext) MaxBufferSize() int {
-	return 48000 * channelNum * bitDepthInBytes / 4
+	return 48000 * channelCount * bitDepthInBytesInt16 / 4
 }
 
 func (c *dummyContext) Suspend() error {
@@ -64,8 +64,16 @@ func (p *dummyPlayer) Play() {
 	p.playing = true
 	p.m.Unlock()
 	go func() {
-		if _, err := ioutil.ReadAll(p.r); err != nil {
-			panic(err)
+		var buf [4096]byte
+		for {
+			_, err := p.r.Read(buf[:])
+			if err != nil {
+				if err != io.EOF {
+					panic(err)
+				}
+				break
+			}
+			time.Sleep(time.Millisecond)
 		}
 		p.m.Lock()
 		p.playing = false
@@ -87,7 +95,7 @@ func (p *dummyPlayer) SetVolume(volume float64) {
 	p.volume = volume
 }
 
-func (p *dummyPlayer) UnplayedBufferSize() int {
+func (p *dummyPlayer) BufferedSize() int {
 	return 0
 }
 
@@ -128,11 +136,11 @@ func (h *dummyHook) AppendHookOnBeforeUpdate(f func() error) {
 }
 
 func init() {
-	hookForTesting = &dummyHook{}
+	hookerForTesting = &dummyHook{}
 }
 
 func UpdateForTesting() error {
-	for _, f := range hookForTesting.(*dummyHook).updates {
+	for _, f := range hookerForTesting.(*dummyHook).updates {
 		if err := f(); err != nil {
 			return err
 		}
@@ -140,10 +148,10 @@ func UpdateForTesting() error {
 	return nil
 }
 
-func PlayersNumForTesting() int {
+func PlayersCountForTesting() int {
 	c := CurrentContext()
 	c.m.Lock()
-	n := len(c.players)
+	n := len(c.playingPlayers)
 	c.m.Unlock()
 	return n
 }

@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -24,7 +21,7 @@ import (
 	_ "image/png"
 	"log"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -43,20 +40,17 @@ var (
 
 func init() {
 	// Decode an image from the image file's byte slice.
-	// Now the byte slice is generated with //go:generate for Go 1.15 or older.
-	// If you use Go 1.16 or newer, it is strongly recommended to use //go:embed to embed the image file.
-	// See https://pkg.go.dev/embed for more details.
 	img, _, err := image.Decode(bytes.NewReader(images.Ebiten_png))
 	if err != nil {
 		log.Fatal(err)
 	}
 	origEbitenImage := ebiten.NewImageFromImage(img)
 
-	w, h := origEbitenImage.Size()
-	ebitenImage = ebiten.NewImage(w, h)
+	s := origEbitenImage.Bounds().Size()
+	ebitenImage = ebiten.NewImage(s.X, s.Y)
 
 	op := &ebiten.DrawImageOptions{}
-	op.ColorM.Scale(1, 1, 1, 0.5)
+	op.ColorScale.ScaleAlpha(0.5)
 	ebitenImage.DrawImage(origEbitenImage, op)
 }
 
@@ -124,10 +118,10 @@ func (g *Game) init() {
 	g.sprites.sprites = make([]*Sprite, MaxSprites)
 	g.sprites.num = 500
 	for i := range g.sprites.sprites {
-		w, h := ebitenImage.Size()
-		x, y := rand.Intn(screenWidth-w), rand.Intn(screenHeight-h)
-		vx, vy := 2*rand.Intn(2)-1, 2*rand.Intn(2)-1
-		a := rand.Intn(maxAngle)
+		w, h := ebitenImage.Bounds().Dx(), ebitenImage.Bounds().Dy()
+		x, y := rand.IntN(screenWidth-w), rand.IntN(screenHeight-h)
+		vx, vy := 2*rand.IntN(2)-1, 2*rand.IntN(2)-1
+		a := rand.IntN(maxAngle)
 		g.sprites.sprites[i] = &Sprite{
 			imageWidth:  w,
 			imageHeight: h,
@@ -193,7 +187,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// some conditions e.g. all the rendering sources and targets are same.
 	// For more detail, see:
 	// https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#Image.DrawImage
-	w, h := ebitenImage.Size()
+	w, h := ebitenImage.Bounds().Dx(), ebitenImage.Bounds().Dy()
 	for i := 0; i < g.sprites.num; i++ {
 		s := g.sprites.sprites[i]
 		g.op.GeoM.Reset()
@@ -206,7 +200,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	msg := fmt.Sprintf(`TPS: %0.2f
 FPS: %0.2f
 Num of sprites: %d
-Press <- or -> to change the number of sprites`, ebiten.CurrentTPS(), ebiten.CurrentFPS(), g.sprites.num)
+Press <- or -> to change the number of sprites`, ebiten.ActualTPS(), ebiten.ActualFPS(), g.sprites.num)
 	ebitenutil.DebugPrint(screen, msg)
 }
 
@@ -216,7 +210,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	ebiten.SetWindowSize(screenWidth*2, screenHeight*2)
-	ebiten.SetWindowTitle("Sprites (Ebiten Demo)")
+	ebiten.SetWindowTitle("Sprites (Ebitengine Demo)")
 	ebiten.SetWindowResizable(true)
 	if err := ebiten.RunGame(&Game{}); err != nil {
 		log.Fatal(err)

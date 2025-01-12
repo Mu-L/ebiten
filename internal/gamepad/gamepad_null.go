@@ -13,12 +13,13 @@
 // limitations under the License.
 
 //go:build !darwin && !js && !linux && !windows
-// +build !darwin,!js,!linux,!windows
 
 package gamepad
 
 import (
 	"time"
+
+	"github.com/hajimehoshi/ebiten/v2/internal/gamepaddb"
 )
 
 type nativeGamepadsImpl struct{}
@@ -45,6 +46,14 @@ func (*nativeGamepadImpl) hasOwnStandardLayoutMapping() bool {
 	return false
 }
 
+func (*nativeGamepadImpl) standardAxisInOwnMapping(axis gamepaddb.StandardAxis) mappingInput {
+	return nil
+}
+
+func (*nativeGamepadImpl) standardButtonInOwnMapping(button gamepaddb.StandardButton) mappingInput {
+	return nil
+}
+
 func (*nativeGamepadImpl) axisCount() int {
 	return 0
 }
@@ -57,6 +66,10 @@ func (*nativeGamepadImpl) hatCount() int {
 	return 0
 }
 
+func (g *nativeGamepadImpl) isAxisReady(axis int) bool {
+	return false
+}
+
 func (*nativeGamepadImpl) axisValue(axis int) float64 {
 	return 0
 }
@@ -66,7 +79,7 @@ func (*nativeGamepadImpl) isButtonPressed(button int) bool {
 }
 
 func (*nativeGamepadImpl) buttonValue(button int) float64 {
-	panic("gamepad: buttonValue is not implemented")
+	return 0
 }
 
 func (*nativeGamepadImpl) hatState(hat int) int {

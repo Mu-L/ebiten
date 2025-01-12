@@ -13,30 +13,23 @@
 // limitations under the License.
 
 //go:build ignore
-// +build ignore
 
 package main
 
-import (
-	"errors"
-
-	"github.com/hajimehoshi/ebiten/v2"
-)
+import "github.com/hajimehoshi/ebiten/v2"
 
 func init() {
 	s, err := ebiten.NewShader([]byte(`
 package main
 
-func Fragment(position vec4, texCoord vec2, color vec4) vec4 {
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
 	return vec4(1)
 }`))
 	if err != nil {
 		panic(err)
 	}
-	s.Dispose()
+	s.Deallocate()
 }
-
-var regularTermination = errors.New("regular termination")
 
 type Game struct {
 	counter int
@@ -45,7 +38,7 @@ type Game struct {
 func (g *Game) Update() error {
 	g.counter++
 	if g.counter > 1 {
-		return regularTermination
+		return ebiten.Termination
 	}
 	return nil
 }
@@ -59,7 +52,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	// Run a game loop at least for one frame to ensure the shader disposed.
-	if err := ebiten.RunGame(&Game{}); err != nil && err != regularTermination {
+	if err := ebiten.RunGame(&Game{}); err != nil {
 		panic(err)
 	}
 }

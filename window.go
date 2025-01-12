@@ -23,9 +23,9 @@ import (
 
 // WindowResizingModeType represents a mode in which a user resizes the window.
 //
-// Regardless of the resizing mode, an Ebiten application can still change the window size or make
-// the window fullscreen by calling Ebiten functions.
-type WindowResizingModeType = ui.WindowResizingMode
+// Regardless of the resizing mode, an Ebitengine application can still change the window size or make
+// the window fullscreen by calling Ebitengine functions.
+type WindowResizingModeType int
 
 // WindowResizingModeTypes
 const (
@@ -54,9 +54,7 @@ func IsWindowDecorated() bool {
 // The window is decorated by default.
 //
 // SetWindowDecorated works only on desktops.
-// SetWindowDecorated does nothing on other platforms.
-//
-// SetWindowDecorated does nothing on macOS when the window is fullscreened.
+// SetWindowDecorated does nothing if the platform is not a desktop.
 //
 // SetWindowDecorated is concurrent-safe.
 func SetWindowDecorated(decorated bool) {
@@ -73,8 +71,6 @@ func WindowResizingMode() WindowResizingModeType {
 }
 
 // SetWindowResizingMode sets the mode in which a user resizes the window.
-//
-// SetWindowResizingMode does nothing on macOS when the window is fullscreened.
 //
 // SetWindowResizingMode is concurrent-safe.
 func SetWindowResizingMode(mode WindowResizingModeType) {
@@ -103,7 +99,7 @@ func SetWindowResizable(resizable bool) {
 
 // SetWindowTitle sets the title of the window.
 //
-// SetWindowTitle does nothing on browsers or mobiles.
+// SetWindowTitle does nothing if the platform is not a desktop.
 //
 // SetWindowTitle is concurrent-safe.
 func SetWindowTitle(title string) {
@@ -116,18 +112,18 @@ func SetWindowTitle(title string) {
 //
 // For desktops, see the document of glfwSetWindowIcon of GLFW 3.2:
 //
-//     This function sets the icon of the specified window.
-//     If passed an array of candidate images, those of or closest to the sizes
-//     desired by the system are selected.
-//     If no images are specified, the window reverts to its default icon.
+//	This function sets the icon of the specified window.
+//	If passed an array of candidate images, those of or closest to the sizes
+//	desired by the system are selected.
+//	If no images are specified, the window reverts to its default icon.
 //
-//     The desired image sizes varies depending on platform and system settings.
-//     The selected images will be rescaled as needed.
-//     Good sizes include 16x16, 32x32 and 48x48.
+//	The desired image sizes varies depending on platform and system settings.
+//	The selected images will be rescaled as needed.
+//	Good sizes include 16x16, 32x32 and 48x48.
 //
 // As macOS windows don't have icons, SetWindowIcon doesn't work on macOS.
 //
-// SetWindowIcon doesn't work on browsers or mobiles.
+// SetWindowIcon doesn't work if the platform is not a desktop.
 //
 // SetWindowIcon is concurrent-safe.
 func SetWindowIcon(iconImages []image.Image) {
@@ -135,14 +131,14 @@ func SetWindowIcon(iconImages []image.Image) {
 }
 
 // WindowPosition returns the window position.
-// The origin position is the left-upper corner of the current monitor.
+// The origin position is the upper-left corner of the current monitor.
 // The unit is device-independent pixels.
 //
 // WindowPosition panics if the main loop does not start yet.
 //
-// WindowPosition returns the last window position in fullscreen mode.
+// WindowPosition returns the original window position in fullscreen mode.
 //
-// WindowPosition returns (0, 0) on browsers and mobiles.
+// WindowPosition returns (0, 0) if the platform is not a desktop.
 //
 // WindowPosition is concurrent-safe.
 func WindowPosition() (x, y int) {
@@ -150,28 +146,27 @@ func WindowPosition() (x, y int) {
 }
 
 // SetWindowPosition sets the window position.
-// The origin position is the left-upper corner of the current monitor.
+// The origin position is the upper-left corner of the current monitor.
 // The unit is device-independent pixels.
 //
-// SetWindowPosition does nothing in fullscreen mode.
+// SetWindowPosition sets the original window position in fullscreen mode.
 //
-// SetWindowPosition does nothing on browsers and mobiles.
+// SetWindowPosition does nothing if the platform is not a desktop.
 //
 // SetWindowPosition is concurrent-safe.
 func SetWindowPosition(x, y int) {
-	atomic.StoreUint32(&windowPositionSetExplicitly, 1)
+	windowPositionSetExplicitly.Store(true)
 	ui.Get().Window().SetPosition(x, y)
 }
 
 var (
-	windowPositionSetExplicitly uint32
+	windowPositionSetExplicitly atomic.Bool
 )
 
 func initializeWindowPositionIfNeeded(width, height int) {
-	if atomic.LoadUint32(&windowPositionSetExplicitly) == 0 {
-		sw, sh := ui.Get().ScreenSizeInFullscreen()
-		x := (sw - width) / 2
-		y := (sh - height) / 3
+	if !windowPositionSetExplicitly.Load() {
+		sw, sh := ui.Get().Monitor().Size()
+		x, y := ui.InitialWindowPosition(sw, sh, width, height)
 		ui.Get().Window().SetPosition(x, y)
 	}
 }
@@ -179,7 +174,8 @@ func initializeWindowPositionIfNeeded(width, height int) {
 // WindowSize returns the window size on desktops.
 // WindowSize returns (0, 0) on other environments.
 //
-// In fullscreen mode, WindowSize returns the original window size.
+// Even if the application is in fullscreen mode, WindowSize returns the original window size
+// If you need the fullscreen dimensions, see Monitor().Size() instead.
 //
 // WindowSize is concurrent-safe.
 func WindowSize() (int, int) {
@@ -189,7 +185,7 @@ func WindowSize() (int, int) {
 // SetWindowSize sets the window size on desktops.
 // SetWindowSize does nothing on other environments.
 //
-// In fullscreen mode, SetWindowSize sets the original window size.
+// Even if the application is in fullscreen mode, SetWindowSize sets the original window size.
 //
 // SetWindowSize panics if width or height is not a positive number.
 //
@@ -219,7 +215,7 @@ func SetWindowSizeLimits(minw, minh, maxw, maxh int) {
 
 // IsWindowFloating reports whether the window is always shown above all the other windows.
 //
-// IsWindowFloating returns false on browsers and mobiles.
+// IsWindowFloating returns false if the platform is not a desktop.
 //
 // IsWindowFloating is concurrent-safe.
 func IsWindowFloating() bool {
@@ -228,9 +224,7 @@ func IsWindowFloating() bool {
 
 // SetWindowFloating sets the state whether the window is always shown above all the other windows.
 //
-// SetWindowFloating does nothing on browsers or mobiles.
-//
-// SetWindowFloating does nothing on macOS when the window is fullscreened.
+// SetWindowFloating does nothing if the platform is not a desktop.
 //
 // SetWindowFloating is concurrent-safe.
 func SetWindowFloating(float bool) {
@@ -239,9 +233,9 @@ func SetWindowFloating(float bool) {
 
 // MaximizeWindow maximizes the window.
 //
-// MaximizeWindow panics when the window is not resizable (WindowResizingModeEnabled).
+// MaximizeWindow does nothing when the window is not resizable (WindowResizingModeEnabled).
 //
-// MaximizeWindow does nothing on browsers or mobiles.
+// MaximizeWindow does nothing if the platform is not a desktop.
 //
 // MaximizeWindow is concurrent-safe.
 func MaximizeWindow() {
@@ -252,7 +246,7 @@ func MaximizeWindow() {
 //
 // IsWindowMaximized returns false when the window is not resizable (WindowResizingModeEnabled).
 //
-// IsWindowMaximized always returns false on browsers and mobiles.
+// IsWindowMaximized always returns false if the platform is not a desktop.
 //
 // IsWindowMaximized is concurrent-safe.
 func IsWindowMaximized() bool {
@@ -263,7 +257,7 @@ func IsWindowMaximized() bool {
 //
 // If the main loop does not start yet, MinimizeWindow does nothing.
 //
-// MinimizeWindow does nothing on browsers or mobiles.
+// MinimizeWindow does nothing if the platform is not a desktop.
 //
 // MinimizeWindow is concurrent-safe.
 func MinimizeWindow() {
@@ -272,7 +266,7 @@ func MinimizeWindow() {
 
 // IsWindowMinimized reports whether the window is minimized or not.
 //
-// IsWindowMinimized always returns false on browsers and mobiles.
+// IsWindowMinimized always returns false if the platform is not a desktop.
 //
 // IsWindowMinimized is concurrent-safe.
 func IsWindowMinimized() bool {
@@ -295,22 +289,22 @@ func RestoreWindow() {
 // As the window is closed immediately by default,
 // you might want to call SetWindowClosingHandled(true) to prevent the window is automatically closed.
 //
-// IsWindowBeingClosed always returns false on other platforms.
+// IsWindowBeingClosed always returns false if the platform is not a desktop.
 //
 // IsWindowBeingClosed is concurrent-safe.
 func IsWindowBeingClosed() bool {
-	return ui.Get().Window().IsBeingClosed()
+	return theInputState.windowBeingClosed()
 }
 
 // SetWindowClosingHandled sets whether the window closing is handled or not on desktops. The default state is false.
 //
 // If the window closing is handled, the window is not closed immediately and
-// the game can know whether the window is begin closed or not by IsWindowBeingClosed.
+// the game can know whether the window is being closed or not by IsWindowBeingClosed.
 // In this case, the window is not closed automatically.
 // To end the game, you have to return an error value at the Game's Update function.
 //
 // SetWindowClosingHandled works only on desktops.
-// SetWindowClosingHandled does nothing on other platforms.
+// SetWindowClosingHandled does nothing if the platform is not a desktop.
 //
 // SetWindowClosingHandled is concurrent-safe.
 func SetWindowClosingHandled(handled bool) {
@@ -319,9 +313,41 @@ func SetWindowClosingHandled(handled bool) {
 
 // IsWindowClosingHandled reports whether the window closing is handled or not on desktops by SetWindowClosingHandled.
 //
-// IsWindowClosingHandled always returns false on other platforms.
+// IsWindowClosingHandled always returns false if the platform is not a desktop.
 //
 // IsWindowClosingHandled is concurrent-safe.
 func IsWindowClosingHandled() bool {
 	return ui.Get().Window().IsClosingHandled()
+}
+
+// SetWindowMousePassthrough sets whether a mouse cursor passthroughs the window or not on desktops. The default state is false.
+//
+// Even if this is set true, some platforms might require a window to be undecorated
+// in order to make the mouse cursor passthrough the window.
+//
+// SetWindowMousePassthrough works only on desktops.
+// SetWindowMousePassthrough does nothing if the platform is not a desktop.
+//
+// SetWindowMousePassthrough is concurrent-safe.
+func SetWindowMousePassthrough(enabled bool) {
+	ui.Get().Window().SetMousePassthrough(enabled)
+}
+
+// IsWindowMousePassthrough reports whether a mouse cursor passthroughs the window or not on desktops.
+//
+// IsWindowMousePassthrough always returns false if the platform is not a desktop.
+//
+// IsWindowMousePassthrough is concurrent-safe.
+func IsWindowMousePassthrough() bool {
+	return ui.Get().Window().IsMousePassthrough()
+}
+
+// RequestAttention requests user attention to the current window and/or the current application.
+//
+// RequestAttention works only on desktops.
+// RequestAttention does nothing if the platform is not a desktop.
+//
+// RequestAttention is concurrent-safe.
+func RequestAttention() {
+	ui.Get().Window().RequestAttention()
 }

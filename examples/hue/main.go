@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -25,6 +22,7 @@ import (
 	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/colorm"
 	"github.com/hajimehoshi/ebiten/v2/examples/resources/images"
 )
 
@@ -48,16 +46,16 @@ func (g *Game) Update() error {
 
 func (g *Game) Draw(screen *ebiten.Image) {
 	// Center the image on the screen.
-	w, h := gophersImage.Size()
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Translate(-float64(w)/2, -float64(h)/2)
+	s := gophersImage.Bounds().Size()
+	op := &colorm.DrawImageOptions{}
+	op.GeoM.Translate(-float64(s.X)/2, -float64(s.Y)/2)
 	op.GeoM.Scale(2, 2)
 	op.GeoM.Translate(float64(screenWidth)/2, float64(screenHeight)/2)
 
 	// Rotate the hue.
-	op.ColorM.RotateHue(float64(g.count%360) * 2 * math.Pi / 360)
-
-	screen.DrawImage(gophersImage, op)
+	var c colorm.ColorM
+	c.RotateHue(float64(g.count%360) * 2 * math.Pi / 360)
+	colorm.DrawImage(screen, gophersImage, c, op)
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
@@ -66,9 +64,6 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	// Decode an image from the image file's byte slice.
-	// Now the byte slice is generated with //go:generate for Go 1.15 or older.
-	// If you use Go 1.16 or newer, it is strongly recommended to use //go:embed to embed the image file.
-	// See https://pkg.go.dev/embed for more details.
 	img, _, err := image.Decode(bytes.NewReader(images.Gophers_jpg))
 	if err != nil {
 		log.Fatal(err)
@@ -76,7 +71,7 @@ func main() {
 	gophersImage = ebiten.NewImageFromImage(img)
 
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("Hue (Ebiten Demo)")
+	ebiten.SetWindowTitle("Hue (Ebitengine Demo)")
 	if err := ebiten.RunGame(&Game{}); err != nil {
 		log.Fatal(err)
 	}

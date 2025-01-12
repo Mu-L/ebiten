@@ -20,6 +20,7 @@ import (
 	_ "image/png"
 
 	"github.com/hajimehoshi/ebiten/v2"
+	"github.com/hajimehoshi/ebiten/v2/colorm"
 	rblocks "github.com/hajimehoshi/ebiten/v2/examples/resources/images/blocks"
 )
 
@@ -81,7 +82,7 @@ func transpose(bs [][]bool) [][]bool {
 	for j, row := range bs {
 		blocks[j] = make([]bool, len(row))
 	}
-	// Tranpose the argument matrix.
+	// Transpose the argument matrix.
 	for i, col := range bs {
 		for j, v := range col {
 			blocks[j][i] = v
@@ -159,28 +160,27 @@ func init() {
 }
 
 const (
-	blockWidth     = 10
-	blockHeight    = 10
-	fieldBlockNumX = 10
-	fieldBlockNumY = 20
+	blockWidth       = 10
+	blockHeight      = 10
+	fieldBlockCountX = 10
+	fieldBlockCountY = 20
 )
 
-func drawBlock(r *ebiten.Image, block BlockType, x, y int, clr ebiten.ColorM) {
+func drawBlock(r *ebiten.Image, block BlockType, x, y int, clr colorm.ColorM) {
 	if block == BlockTypeNone {
 		return
 	}
 
-	op := &ebiten.DrawImageOptions{}
-	op.ColorM = clr
+	op := &colorm.DrawImageOptions{}
 	op.GeoM.Translate(float64(x), float64(y))
 
 	srcX := (int(block) - 1) * blockWidth
-	r.DrawImage(imageBlocks.SubImage(image.Rect(srcX, 0, srcX+blockWidth, blockHeight)).(*ebiten.Image), op)
+	colorm.DrawImage(r, imageBlocks.SubImage(image.Rect(srcX, 0, srcX+blockWidth, blockHeight)).(*ebiten.Image), clr, op)
 }
 
 func (p *Piece) InitialPosition() (int, int) {
 	size := len(p.blocks)
-	x := (fieldBlockNumX - size) / 2
+	x := (fieldBlockCountX - size) / 2
 	y := 0
 Loop:
 	for j := 0; j < size; j++ {
@@ -249,7 +249,7 @@ func (p *Piece) Draw(r *ebiten.Image, x, y int, angle Angle) {
 	for i := range p.blocks {
 		for j := range p.blocks[i] {
 			if p.isBlocked(i, j, angle) {
-				drawBlock(r, p.blockType, i*blockWidth+x, j*blockHeight+y, ebiten.ColorM{})
+				drawBlock(r, p.blockType, i*blockWidth+x, j*blockHeight+y, colorm.ColorM{})
 			}
 		}
 	}

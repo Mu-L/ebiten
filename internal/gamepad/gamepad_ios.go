@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build ios && !ebitencbackend
-// +build ios,!ebitencbackend
-
 package gamepad
 
 import (
 	"time"
+
+	"github.com/hajimehoshi/ebiten/v2/internal/gamepaddb"
 )
 
 type nativeGamepadsImpl struct{}
@@ -57,6 +56,14 @@ func (*nativeGamepadImpl) hasOwnStandardLayoutMapping() bool {
 	return false
 }
 
+func (*nativeGamepadImpl) standardAxisInOwnMapping(axis gamepaddb.StandardAxis) mappingInput {
+	return nil
+}
+
+func (*nativeGamepadImpl) standardButtonInOwnMapping(button gamepaddb.StandardButton) mappingInput {
+	return nil
+}
+
 func (g *nativeGamepadImpl) axisCount() int {
 	return len(g.axes)
 }
@@ -67,6 +74,10 @@ func (g *nativeGamepadImpl) buttonCount() int {
 
 func (g *nativeGamepadImpl) hatCount() int {
 	return len(g.hats)
+}
+
+func (g *nativeGamepadImpl) isAxisReady(axis int) bool {
+	return axis >= 0 && axis < g.axisCount()
 }
 
 func (g *nativeGamepadImpl) axisValue(axis int) float64 {
@@ -83,8 +94,11 @@ func (g *nativeGamepadImpl) isButtonPressed(button int) bool {
 	return g.buttons[button]
 }
 
-func (*nativeGamepadImpl) buttonValue(button int) float64 {
-	panic("gamepad: buttonValue is not implemented")
+func (g *nativeGamepadImpl) buttonValue(button int) float64 {
+	if g.isButtonPressed(button) {
+		return 1
+	}
+	return 0
 }
 
 func (g *nativeGamepadImpl) hatState(hat int) int {

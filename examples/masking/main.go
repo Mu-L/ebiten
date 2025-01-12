@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -43,9 +40,6 @@ var (
 
 func init() {
 	// Decode an image from the image file's byte slice.
-	// Now the byte slice is generated with //go:generate for Go 1.15 or older.
-	// If you use Go 1.16 or newer, it is strongly recommended to use //go:embed to embed the image file.
-	// See https://pkg.go.dev/embed for more details.
 	img, _, err := image.Decode(bytes.NewReader(images.Gophers_jpg))
 	if err != nil {
 		log.Fatal(err)
@@ -108,8 +102,8 @@ func (g *Game) Update() error {
 		g.spotLightY = -g.spotLightY
 		g.spotLightVY = -g.spotLightVY
 	}
-	w, h := spotLightImage.Size()
-	maxX, maxY := screenWidth-w, screenHeight-h
+	s := spotLightImage.Bounds().Size()
+	maxX, maxY := screenWidth-s.X, screenHeight-s.Y
 	if maxX < g.spotLightX {
 		g.spotLightX = -g.spotLightX + 2*maxX
 		g.spotLightVX = -g.spotLightVX
@@ -125,11 +119,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// Reset the maskedFgImage.
 	maskedFgImage.Fill(color.White)
 	op := &ebiten.DrawImageOptions{}
-	op.CompositeMode = ebiten.CompositeModeCopy
+	op.Blend = ebiten.BlendCopy
 	op.GeoM.Translate(float64(g.spotLightX), float64(g.spotLightY))
 	maskedFgImage.DrawImage(spotLightImage, op)
 
-	// Use 'source-in' composite mode so that the source image (fgImage) is used but the alpha
+	// Use 'source-in' blend mode so that the source image (fgImage) is used but the alpha
 	// is determined by the destination image (maskedFgImage).
 	//
 	// The result image is the source image with the destination alpha. In maskedFgImage, alpha
@@ -139,7 +133,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	//
 	// See also https://www.w3.org/TR/compositing-1/#porterduffcompositingoperators_srcin.
 	op = &ebiten.DrawImageOptions{}
-	op.CompositeMode = ebiten.CompositeModeSourceIn
+	op.Blend = ebiten.BlendSourceIn
 	maskedFgImage.DrawImage(fgImage, op)
 
 	screen.Fill(color.RGBA{0x00, 0x00, 0x80, 0xff})
@@ -151,23 +145,9 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 	return screenWidth, screenHeight
 }
 
-func max(a, b int) int {
-	if a < b {
-		return b
-	}
-	return a
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func main() {
 	ebiten.SetWindowSize(screenWidth*2, screenHeight*2)
-	ebiten.SetWindowTitle("Masking (Ebiten Demo)")
+	ebiten.SetWindowTitle("Masking (Ebitengine Demo)")
 	if err := ebiten.RunGame(&Game{}); err != nil {
 		log.Fatal(err)
 	}

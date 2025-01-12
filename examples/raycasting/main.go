@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -32,6 +29,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/examples/resources/images"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 const (
@@ -48,9 +46,6 @@ var (
 
 func init() {
 	// Decode an image from the image file's byte slice.
-	// Now the byte slice is generated with //go:generate for Go 1.15 or older.
-	// If you use Go 1.16 or newer, it is strongly recommended to use //go:embed to embed the image file.
-	// See https://pkg.go.dev/embed for more details.
 	img, _, err := image.Decode(bytes.NewReader(images.Tile_png))
 	if err != nil {
 		log.Fatal(err)
@@ -237,7 +232,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// Subtract ray triangles from shadow
 	opt := &ebiten.DrawTrianglesOptions{}
 	opt.Address = ebiten.AddressRepeat
-	opt.CompositeMode = ebiten.CompositeModeSourceOut
+	opt.Blend = ebiten.BlendSourceOut
 	for i, line := range rays {
 		nextLine := rays[(i+1)%len(rays)]
 
@@ -252,25 +247,25 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	if g.showRays {
 		// Draw rays
 		for _, r := range rays {
-			ebitenutil.DrawLine(screen, r.X1, r.Y1, r.X2, r.Y2, color.RGBA{255, 255, 0, 150})
+			vector.StrokeLine(screen, float32(r.X1), float32(r.Y1), float32(r.X2), float32(r.Y2), 1, color.RGBA{255, 255, 0, 150}, true)
 		}
 	}
 
 	// Draw shadow
 	op := &ebiten.DrawImageOptions{}
-	op.ColorM.Scale(1, 1, 1, 0.7)
+	op.ColorScale.ScaleAlpha(0.7)
 	screen.DrawImage(shadowImage, op)
 
 	// Draw walls
 	for _, obj := range g.objects {
 		for _, w := range obj.walls {
-			ebitenutil.DrawLine(screen, w.X1, w.Y1, w.X2, w.Y2, color.RGBA{255, 0, 0, 255})
+			vector.StrokeLine(screen, float32(w.X1), float32(w.Y1), float32(w.X2), float32(w.Y2), 1, color.RGBA{255, 0, 0, 255}, true)
 		}
 	}
 
 	// Draw player as a rect
-	ebitenutil.DrawRect(screen, float64(g.px)-2, float64(g.py)-2, 4, 4, color.Black)
-	ebitenutil.DrawRect(screen, float64(g.px)-1, float64(g.py)-1, 2, 2, color.RGBA{255, 100, 100, 255})
+	vector.DrawFilledRect(screen, float32(g.px)-2, float32(g.py)-2, 4, 4, color.Black, true)
+	vector.DrawFilledRect(screen, float32(g.px)-1, float32(g.py)-1, 2, 2, color.RGBA{255, 100, 100, 255}, true)
 
 	if g.showRays {
 		ebitenutil.DebugPrintAt(screen, "R: hide rays", padding, 0)
@@ -279,7 +274,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 
 	ebitenutil.DebugPrintAt(screen, "WASD: move", 160, 0)
-	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("TPS: %0.2f", ebiten.CurrentTPS()), 51, 51)
+	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("TPS: %0.2f", ebiten.ActualTPS()), 51, 51)
 	ebitenutil.DebugPrintAt(screen, fmt.Sprintf("Rays: 2*%d", len(rays)/2), padding, 222)
 }
 
@@ -313,7 +308,7 @@ func main() {
 	g.objects = append(g.objects, object{rect(150, 50, 30, 60)})
 
 	ebiten.SetWindowSize(screenWidth*2, screenHeight*2)
-	ebiten.SetWindowTitle("Ray casting and shadows (Ebiten demo)")
+	ebiten.SetWindowTitle("Ray casting and shadows (Ebitengine Demo)")
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}

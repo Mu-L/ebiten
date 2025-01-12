@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 // This demo is inspired by the xscreensaver 'squirals'.
 
 package main
@@ -23,8 +20,7 @@ import (
 	"fmt"
 	"image/color"
 	"log"
-	"math/rand"
-	"time"
+	"math/rand/v2"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -130,8 +126,8 @@ type squiral struct {
 func (s *squiral) spawn(game *Game) {
 	s.dead = false
 
-	rx := rand.Intn(width-4) + 2
-	ry := rand.Intn(height-4) + 2
+	rx := rand.IntN(width-4) + 2
+	ry := rand.IntN(height-4) + 2
 
 	for dx := -2; dx <= 2; dx++ {
 		for dy := -2; dy <= 2; dy++ {
@@ -143,15 +139,15 @@ func (s *squiral) spawn(game *Game) {
 		}
 	}
 
-	s.speed = rand.Intn(5) + 1
+	s.speed = rand.IntN(5) + 1
 	s.pos.x = rx
 	s.pos.y = ry
-	s.dir = rand.Intn(4)
+	s.dir = rand.IntN(4)
 
 	game.colorCycle = (game.colorCycle + 1) % len(palettes[game.selectedPalette].colors)
 	s.col = palettes[game.selectedPalette].colors[game.colorCycle]
 
-	s.rot = rand.Intn(2)
+	s.rot = rand.IntN(2)
 }
 
 func (s *squiral) step(game *Game) {
@@ -160,7 +156,7 @@ func (s *squiral) step(game *Game) {
 	}
 	x, y := s.pos.x, s.pos.y // shorthands
 
-	change := rand.Intn(1000)
+	change := rand.IntN(1000)
 	if change < 2 {
 		// On 0.2% of iterations, switch rotation direction.
 		s.rot = (s.rot + 1) % 2
@@ -270,10 +266,6 @@ func (a *automaton) step(game *Game) {
 	}
 }
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
 type Game struct {
 	selectedPalette int
 	colorCycle      int
@@ -326,7 +318,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	screen.DrawImage(g.canvas, nil)
 	ebitenutil.DebugPrintAt(
 		screen,
-		fmt.Sprintf("TPS: %0.2f, FPS: %0.2f", ebiten.CurrentTPS(), ebiten.CurrentFPS()),
+		fmt.Sprintf("TPS: %0.2f, FPS: %0.2f", ebiten.ActualTPS(), ebiten.ActualFPS()),
 		1, 0,
 	)
 	ebitenutil.DebugPrintAt(
@@ -351,9 +343,9 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func main() {
-	ebiten.SetMaxTPS(250)
+	ebiten.SetTPS(250)
 	ebiten.SetWindowSize(width*scale, height*scale)
-	ebiten.SetWindowTitle("Squirals (Ebiten Demo)")
+	ebiten.SetWindowTitle("Squirals (Ebitengine Demo)")
 	if err := ebiten.RunGame(NewGame()); err != nil {
 		log.Fatal(err)
 	}

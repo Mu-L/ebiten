@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !ebitencbackend
-// +build !ebitencbackend
-
 package gamepad
 
 import (
@@ -123,6 +120,9 @@ func (n *nativeGamepadsXbox) deviceCallback(callbackToken _GameInputCallbackToke
 type nativeGamepadXbox struct {
 	gameInputDevice *_IGameInputDevice
 	state           _GameInputGamepadState
+
+	vib    bool
+	vibEnd time.Time
 }
 
 func (n *nativeGamepadXbox) update(gamepads *gamepads) error {
@@ -131,6 +131,7 @@ func (n *nativeGamepadXbox) update(gamepads *gamepads) error {
 	if err != nil {
 		return err
 	}
+	defer r.Release()
 
 	state, ok := r.GetGamepadState()
 	if !ok {
@@ -138,11 +139,43 @@ func (n *nativeGamepadXbox) update(gamepads *gamepads) error {
 		return nil
 	}
 	n.state = state
+
+	if n.vib && time.Now().Sub(n.vibEnd) >= 0 {
+		n.gameInputDevice.SetRumbleState(&_GameInputRumbleParams{
+			lowFrequency:  0,
+			highFrequency: 0,
+		}, 0)
+		n.vib = false
+	}
+
 	return nil
 }
 
 func (n *nativeGamepadXbox) hasOwnStandardLayoutMapping() bool {
 	return true
+}
+
+func (n *nativeGamepadXbox) standardAxisInOwnMapping(axis gamepaddb.StandardAxis) mappingInput {
+	switch axis {
+	case gamepaddb.StandardAxisLeftStickHorizontal,
+		gamepaddb.StandardAxisLeftStickVertical,
+		gamepaddb.StandardAxisRightStickHorizontal,
+		gamepaddb.StandardAxisRightStickVertical:
+		return axisMappingInput{g: n, axis: int(axis)}
+	}
+	return nil
+}
+
+func (n *nativeGamepadXbox) standardButtonInOwnMapping(button gamepaddb.StandardButton) mappingInput {
+	switch button {
+	case gamepaddb.StandardButtonFrontBottomLeft,
+		gamepaddb.StandardButtonFrontBottomRight:
+		return buttonMappingInput{g: n, button: int(button)}
+	}
+	if _, ok := standardButtonToGamepadInputGamepadButton(button); !ok {
+		return nil
+	}
+	return buttonMappingInput{g: n, button: int(button)}
 }
 
 func (n *nativeGamepadXbox) axisCount() int {
@@ -157,16 +190,20 @@ func (n *nativeGamepadXbox) hatCount() int {
 	return 0
 }
 
+func (g *nativeGamepadXbox) isAxisReady(axis int) bool {
+	return axis >= 0 && axis < g.axisCount()
+}
+
 func (n *nativeGamepadXbox) axisValue(axis int) float64 {
 	switch gamepaddb.StandardAxis(axis) {
 	case gamepaddb.StandardAxisLeftStickHorizontal:
 		return float64(n.state.leftThumbstickX)
 	case gamepaddb.StandardAxisLeftStickVertical:
-		return float64(n.state.leftThumbstickY)
+		return -float64(n.state.leftThumbstickY)
 	case gamepaddb.StandardAxisRightStickHorizontal:
 		return float64(n.state.rightThumbstickX)
 	case gamepaddb.StandardAxisRightStickVertical:
-		return float64(n.state.rightThumbstickY)
+		return -float64(n.state.rightThumbstickY)
 	}
 	return 0
 }
@@ -189,15 +226,11 @@ func (n *nativeGamepadXbox) buttonValue(button int) float64 {
 }
 
 func (n *nativeGamepadXbox) isButtonPressed(button int) bool {
-	// Use XInput's trigger dead zone.
-	// See https://source.chromium.org/chromium/chromium/src/+/main:device/gamepad/public/cpp/gamepad.h;l=22-23;drc=6997f8a177359bb99598988ed5e900841984d242
-	// TODO: Integrate this value with the same one in the package gamepaddb.
-	const threshold = 30.0 / 255.0
 	switch gamepaddb.StandardButton(button) {
 	case gamepaddb.StandardButtonFrontBottomLeft:
-		return n.state.leftTrigger >= threshold
+		return n.state.leftTrigger > gamepaddb.ButtonPressedThreshold
 	case gamepaddb.StandardButtonFrontBottomRight:
-		return n.state.rightTrigger >= threshold
+		return n.state.rightTrigger > gamepaddb.ButtonPressedThreshold
 	}
 
 	b, ok := standardButtonToGamepadInputGamepadButton(gamepaddb.StandardButton(button))
@@ -215,4 +248,18 @@ func (n *nativeGamepadXbox) hatState(hat int) int {
 }
 
 func (n *nativeGamepadXbox) vibrate(duration time.Duration, strongMagnitude float64, weakMagnitude float64) {
+	if strongMagnitude <= 0 && weakMagnitude <= 0 {
+		n.vib = false
+		n.gameInputDevice.SetRumbleState(&_GameInputRumbleParams{
+			lowFrequency:  0,
+			highFrequency: 0,
+		}, 0)
+		return
+	}
+	n.vib = true
+	n.vibEnd = time.Now().Add(duration)
+	n.gameInputDevice.SetRumbleState(&_GameInputRumbleParams{
+		lowFrequency:  float32(strongMagnitude),
+		highFrequency: float32(weakMagnitude),
+	}, 0)
 }

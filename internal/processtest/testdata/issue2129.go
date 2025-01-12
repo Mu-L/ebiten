@@ -13,17 +13,10 @@
 // limitations under the License.
 
 //go:build ignore
-// +build ignore
 
 package main
 
-import (
-	"errors"
-
-	"github.com/hajimehoshi/ebiten/v2"
-)
-
-var regularTermination = errors.New("regular termination")
+import "github.com/hajimehoshi/ebiten/v2"
 
 type Game struct {
 	count int
@@ -33,13 +26,13 @@ func (g *Game) Update() error {
 	const shaderData = `
 package main
 
-func Fragment(position vec4, texCoord vec2, color vec4) vec4 {
+func Fragment(dstPos vec4, srcPos vec2, color vec4) vec4 {
 	return vec4(1)
 }
 `
 	g.count++
 	if g.count == 16 {
-		return regularTermination
+		return ebiten.Termination
 	}
 
 	if g.count < 8 {
@@ -48,7 +41,7 @@ func Fragment(position vec4, texCoord vec2, color vec4) vec4 {
 			if err != nil {
 				panic(err)
 			}
-			s.Dispose()
+			s.Deallocate()
 		}()
 		return nil
 	}
@@ -64,7 +57,7 @@ func (g *Game) Layout(width, height int) (int, int) {
 }
 
 func main() {
-	if err := ebiten.RunGame(&Game{}); err != nil && err != regularTermination {
+	if err := ebiten.RunGame(&Game{}); err != nil {
 		panic(err)
 	}
 }

@@ -12,20 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
 	"fmt"
 	"image/color"
 	"log"
-	"math/rand"
+	"math/rand/v2"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
-	"github.com/jakecoffman/cp"
+	"github.com/jakecoffman/cp/v2"
 )
 
 const (
@@ -91,7 +88,7 @@ func NewGame() *Game {
 }
 
 func (g *Game) Update() error {
-	g.space.Step(1.0 / float64(ebiten.MaxTPS()))
+	g.space.Step(1.0 / float64(ebiten.TPS()))
 	return nil
 }
 
@@ -99,7 +96,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Fill(color.Black)
 
 	op := &ebiten.DrawImageOptions{}
-	op.ColorM.Scale(200.0/255.0, 200.0/255.0, 200.0/255.0, 1)
+	op.ColorScale.Scale(200.0/255.0, 200.0/255.0, 200.0/255.0, 1)
 
 	g.space.EachBody(func(body *cp.Body) {
 		op.GeoM.Reset()
@@ -107,7 +104,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		screen.DrawImage(dot, op)
 	})
 
-	ebitenutil.DebugPrint(screen, fmt.Sprintf("TPS: %0.2f", ebiten.CurrentTPS()))
+	ebitenutil.DebugPrint(screen, fmt.Sprintf("TPS: %0.2f", ebiten.ActualTPS()))
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {

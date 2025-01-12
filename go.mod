@@ -1,19 +1,29 @@
 module github.com/hajimehoshi/ebiten/v2
 
-go 1.15
+go 1.22.0
 
 require (
-	github.com/ebitengine/purego v0.0.0-20220629143800-0a7163731eab
-	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20220622232848-a6c407ee30a0
-	github.com/hajimehoshi/bitmapfont/v2 v2.2.0
-	github.com/hajimehoshi/file2byteslice v0.0.0-20210813153925-5340248a8f41
-	github.com/hajimehoshi/go-mp3 v0.3.3
-	github.com/hajimehoshi/oto/v2 v2.2.0-alpha.3.0.20220630172654-9e23d1429786
-	github.com/jakecoffman/cp v1.2.0
-	github.com/jezek/xgb v1.0.1
-	github.com/jfreymuth/oggvorbis v1.0.3
-	golang.org/x/image v0.0.0-20220617043117-41969df76e82
-	golang.org/x/mobile v0.0.0-20220518205345-8578da9835fd
-	golang.org/x/sys v0.0.0-20220622161953-175b2fd9d664
-	golang.org/x/tools v0.1.11
+	github.com/ebitengine/gomobile v0.0.0-20241016134836-cc2e38a7c0ee
+	github.com/ebitengine/hideconsole v1.0.0
+	github.com/ebitengine/oto/v3 v3.4.0-alpha.3
+	github.com/ebitengine/purego v0.9.0-alpha.2
+	github.com/gen2brain/mpeg v0.3.2-0.20240412154320-a2ac4fc8a46f
+	github.com/go-text/typesetting v0.2.1
+	github.com/hajimehoshi/bitmapfont/v3 v3.3.0-alpha.3
+	github.com/hajimehoshi/go-mp3 v0.3.4
+	github.com/jakecoffman/cp/v2 v2.1.0
+	github.com/jezek/xgb v1.1.1
+	github.com/jfreymuth/oggvorbis v1.0.5
+	github.com/kisielk/errcheck v1.8.0
+	golang.org/x/image v0.23.0
+	golang.org/x/sync v0.10.0
+	golang.org/x/sys v0.29.0
+	golang.org/x/text v0.21.0
+	golang.org/x/tools v0.29.0
+)
+
+require (
+	github.com/jfreymuth/vorbis v1.0.2 // indirect
+	github.com/pierrec/lz4/v4 v4.1.21 // indirect
+	golang.org/x/mod v0.22.0 // indirect
 )

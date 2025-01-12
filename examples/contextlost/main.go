@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build example
-// +build example
-
 package main
 
 import (
@@ -63,15 +60,15 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	if g.lost {
 		// When the context is lost, skip rendering. Usually this logic should not be required, but when the
 		// context lost happens by the API explicitly, Draw can be called even after the data in GPU
-		// disappered.
+		// disappeared.
 		return
 	}
 
-	w, h := gophersImage.Size()
+	s := gophersImage.Bounds().Size()
 	op := &ebiten.DrawImageOptions{}
 
 	// For the details, see examples/rotate.
-	op.GeoM.Translate(-float64(w)/2, -float64(h)/2)
+	op.GeoM.Translate(-float64(s.X)/2, -float64(s.Y)/2)
 	op.GeoM.Rotate(float64(g.count%360) * 2 * math.Pi / 360)
 	op.GeoM.Translate(screenWidth/2, screenHeight/2)
 	screen.DrawImage(gophersImage, op)
@@ -90,9 +87,6 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 
 func main() {
 	// Decode an image from the image file's byte slice.
-	// Now the byte slice is generated with //go:generate for Go 1.15 or older.
-	// If you use Go 1.16 or newer, it is strongly recommended to use //go:embed to embed the image file.
-	// See https://pkg.go.dev/embed for more details.
 	img, _, err := image.Decode(bytes.NewReader(images.Gophers_jpg))
 	if err != nil {
 		log.Fatal(err)
@@ -106,7 +100,7 @@ func main() {
 	}
 
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("Context Lost (Ebiten Demo)")
+	ebiten.SetWindowTitle("Context Lost (Ebitengine Demo)")
 	if err := ebiten.RunGame(&Game{}); err != nil {
 		log.Fatal(err)
 	}
