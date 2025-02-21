@@ -1,4 +1,4 @@
-// Copyright 2024 The Ebitengine Authors
+// Copyright 2025 The Ebitengine Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package shaderlistertest2
+//go:build ignore
 
-const S = "shader"
+package main
 
-//ebitengine:shadersource
-const _ = "shader 6"
-
-const _ = "not shader"
+// shader 8
