@@ -50,6 +50,17 @@ var (
 	water_go []byte
 )
 
+// These directives are used for an shader analyzer in the future.
+// See also #3157.
+
+//ebitengine:shaderfile default.go
+//ebitengine:shaderfile texel.go
+//ebitengine:shaderfile lighting.go
+//ebitengine:shaderfile radialblur.go
+//ebitengine:shaderfile chromaticaberration.go
+//ebitengine:shaderfile dissolve.go
+//ebitengine:shaderfile water.go
+
 const (
 	screenWidth  = 640
 	screenHeight = 480
@@ -106,18 +117,43 @@ var shaderSrcs = [][]byte{
 }
 
 type Game struct {
-	shaders map[int]*ebiten.Shader
-	idx     int
-	time    int
+	shaders   map[int]*ebiten.Shader
+	idx       int
+	time      int
+	gamepadID ebiten.GamepadID
 }
 
 func (g *Game) Update() error {
 	g.time++
-	if inpututil.IsKeyJustPressed(ebiten.KeyArrowDown) {
+
+	if g.gamepadID < 0 {
+		if ids := inpututil.AppendJustConnectedGamepadIDs(nil); len(ids) > 0 {
+			g.gamepadID = ids[0]
+		}
+	} else {
+		if inpututil.IsGamepadJustDisconnected(g.gamepadID) {
+			if ids := ebiten.AppendGamepadIDs(nil); len(ids) > 0 {
+				g.gamepadID = ids[0]
+			} else {
+				g.gamepadID = -1
+			}
+		}
+	}
+
+	down := inpututil.IsKeyJustPressed(ebiten.KeyArrowDown)
+	if g.gamepadID >= 0 {
+		down = down || inpututil.IsStandardGamepadButtonJustPressed(g.gamepadID, ebiten.StandardGamepadButtonLeftBottom)
+	}
+	if down {
 		g.idx++
 		g.idx %= len(shaderSrcs)
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyArrowUp) {
+
+	up := inpututil.IsKeyJustPressed(ebiten.KeyArrowUp)
+	if g.gamepadID >= 0 {
+		up = up || inpututil.IsStandardGamepadButtonJustPressed(g.gamepadID, ebiten.StandardGamepadButtonLeftTop)
+	}
+	if up {
 		g.idx += len(shaderSrcs) - 1
 		g.idx %= len(shaderSrcs)
 	}
@@ -146,7 +182,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	op := &ebiten.DrawRectShaderOptions{}
 	op.Uniforms = map[string]any{
-		"Time":   float32(g.time) / 60,
+		"Time":   float32(g.time) / float32(ebiten.TPS()),
 		"Cursor": []float32{float32(cx), float32(cy)},
 	}
 	op.Images[0] = gopherImage
@@ -166,7 +202,9 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 func main() {
 	ebiten.SetWindowSize(screenWidth, screenHeight)
 	ebiten.SetWindowTitle("Shader (Ebitengine Demo)")
-	if err := ebiten.RunGame(&Game{}); err != nil {
+	if err := ebiten.RunGame(&Game{
+		gamepadID: -1,
+	}); err != nil {
 		log.Fatal(err)
 	}
 }

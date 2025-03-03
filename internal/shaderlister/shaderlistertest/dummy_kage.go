@@ -1,4 +1,4 @@
-// Copyright 2024 The Ebitengine Authors
+// Copyright 2025 The Ebitengine Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build playstation5
+//go:build ignore
 
-// Package playstation5 provides utilities for PlayStation 5.
-package playstation5
+package main
 
-// The actual implementation will be provided by another repository using github.com/hajimehoshi/uwagaki.
+// shader 7
