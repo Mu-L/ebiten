@@ -858,6 +858,97 @@ func TestAdvanceAt(t *testing.T) {
 	}
 }
 
+func TestAdvanceAtBidi(t *testing.T) {
+	const eps = 1.0 / (1 << 6)
+
+	source, err := text.NewGoTextFaceSource(bytes.NewReader(fonts.MPlus1pRegular_ttf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	face := &text.GoTextFace{
+		Source:    source,
+		Size:      24,
+		Direction: text.DirectionLeftToRight,
+	}
+
+	// Mixed bidi text: LTR + RTL + LTR with base = LTR. Hebrew runes
+	// are 2 bytes each in UTF-8, so logical byte offsets are:
+	//   a=0 b=1 c=2  א=3 ב=5 ג=7  x=9 y=10 z=11  end=12
+	s := "abc" + "אבג" + "xyz"
+
+	at := func(i int) float64 { return text.AdvanceAt(s, i, face) }
+
+	if got := at(0); got != 0 {
+		t.Errorf("AdvanceAt(0) = %v, want 0", got)
+	}
+
+	// End-of-text equals total visual line width (Advance parity).
+	fullAt := at(len(s))
+	//nolint:staticcheck // Advance is deprecated; this verifies parity.
+	fullAdv := text.Advance(s, face)
+	if math.Abs(fullAt-fullAdv) > eps {
+		t.Errorf("AdvanceAt(len) = %v, want Advance() = %v", fullAt, fullAdv)
+	}
+
+	// Leading LTR run "abc" grows monotonically.
+	a0, a1, a2 := at(0), at(1), at(2)
+	if !(a0 < a1 && a1 < a2) {
+		t.Errorf("LTR prefix not monotonic: %v %v %v", a0, a1, a2)
+	}
+
+	// Inside the RTL run, the leading-edge X decreases as the logical
+	// position advances, because RTL glyphs are visually reversed within
+	// their run.
+	aAlef, aBet, aGimel := at(3), at(5), at(7)
+	if !(aAlef > aBet && aBet > aGimel) {
+		t.Errorf("RTL run not visually reversed: aAlef=%v aBet=%v aGimel=%v", aAlef, aBet, aGimel)
+	}
+
+	// At the LTR→RTL→LTR seam on the right side of the RTL run, the
+	// leading edge of א (RTL, leading = right side) coincides with the
+	// leading edge of x (LTR, leading = left side).
+	aX := at(9)
+	if math.Abs(aAlef-aX) > eps {
+		t.Errorf("RTL→LTR seam mismatch: leading(א)=%v leading(x)=%v", aAlef, aX)
+	}
+
+	// Trailing LTR run "xyz" grows monotonically again.
+	aY, aZ := at(10), at(11)
+	if !(aX < aY && aY < aZ && aZ < fullAt) {
+		t.Errorf("LTR suffix not monotonic: %v %v %v %v", aX, aY, aZ, fullAt)
+	}
+
+	// Snap-to-prev: bytes interior to a Hebrew rune (2 bytes each) take
+	// the leading-edge X of the rune's start byte.
+	for _, start := range []int{3, 5, 7} {
+		if got := at(start + 1); math.Abs(got-at(start)) > eps {
+			t.Errorf("AdvanceAt(%d) = %v, want snap-to-prev %v", start+1, got, at(start))
+		}
+	}
+
+	// Special case: when the text ends with an RTL run under an LTR
+	// base, AdvanceAt(text, len) returns the total visual line width
+	// rather than snap-to-prev'ing onto an interior position, so it
+	// preserves parity with Advance. The interior position that
+	// snap-to-prev would otherwise pick is the leading edge of ג (the
+	// visually-leftmost glyph in the RTL run, which is the last logical
+	// byte's cluster-start in logical order); the special case must
+	// jump past that to the visual line end.
+	s2 := "abc" + "אבג"
+	at2 := func(i int) float64 { return text.AdvanceAt(s2, i, face) }
+	full2 := at2(len(s2))
+	//nolint:staticcheck // Advance is deprecated; this verifies parity.
+	full2Adv := text.Advance(s2, face)
+	if math.Abs(full2-full2Adv) > eps {
+		t.Errorf("AdvanceAt(len) at LTR-ending-in-RTL = %v, want Advance() = %v", full2, full2Adv)
+	}
+	// Leading edge of ג sits inside the line (right side of the visually
+	// leftmost RTL glyph); the end-of-text X must lie strictly past it.
+	if leadGimel := at2(7); !(full2 > leadGimel+eps) {
+		t.Errorf("AdvanceAt(len) = %v, want strictly > leading(ג) = %v", full2, leadGimel)
+	}
+}
+
 func TestAdvanceAtMultiFace(t *testing.T) {
 	const eps = 1.0 / (1 << 6)
 

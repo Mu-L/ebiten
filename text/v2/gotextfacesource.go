@@ -25,6 +25,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/go-text/typesetting/di"
 	"github.com/go-text/typesetting/font"
 	"github.com/go-text/typesetting/font/opentype"
 	"github.com/go-text/typesetting/language"
@@ -347,11 +348,21 @@ func (g *GoTextFaceSource) UnsafeInternal() any {
 	return g.f
 }
 
-// advances returns a cumulative-advance slice of length len(text)+1 such that
-// element i is the advance from the start of text to byte index i. A byte
-// index that lands inside a glyph cluster gets the same advance as the
-// cluster's start (snap-to-prev), since the cluster's advance is recorded
-// only at its end-byte position.
+// advances returns a slice of length len(text)+1 where element i is the
+// visual X of the caret at logical byte i, using the leading-edge
+// convention: the value is the leading edge of the cluster that starts
+// at byte i (left edge in an LTR run, right edge in an RTL run). A byte
+// inside a cluster snaps to the cluster's leading-edge X in logical
+// order.
+//
+// The final element a[len(text)] is defined as the total visual line
+// width, which is one of several reasonable end-of-text conventions
+// chosen here for caret-at-line-end semantics. Under the leading-edge
+// rule alone this position is otherwise ambiguous when the last logical
+// character is in a run whose direction differs from the base.
+//
+// The leading-edge convention picks one of the two visually valid carets
+// at a bidi level boundary; affinity-aware positioning is not exposed.
 func (g *GoTextFaceSource) advances(text string, face *GoTextFace) []fixed.Int26_6 {
 	g.copyCheck()
 
@@ -368,19 +379,100 @@ func (g *GoTextFaceSource) advances(text string, face *GoTextFace) []fixed.Int26
 		}
 		runeToByte = append(runeToByte, len(text))
 
-		// Accumulate each glyph's advance at its cluster end-byte, then
-		// prefix-sum to get cumulative advance at every byte position.
-		a := make([]fixed.Int26_6, len(text)+1)
-		for _, out := range outputs {
-			for i := range out.Glyphs {
-				gl := &out.Glyphs[i]
-				endByte := runeToByte[gl.ClusterIndex+gl.RunesCount()]
-				a[endByte] += gl.Advance
+		// Sort run references into logical order (by run start rune),
+		// then assign each one a visual index by applying the bidi L2
+		// rule for two levels (base direction plus its opposite).
+		//
+		// TODO: handle nested bidi (level 2+). The shaping.Output only
+		// carries Direction, not the bidi level resolved by the
+		// segmenter, so this loop can only flip non-base-direction runs
+		// once. Calling github.com/go-text/typesetting/bidi directly
+		// would yield per-run levels and let L2 run to full depth, but
+		// that is worth doing in concert with the renderer (see the
+		// matching TODO at buildOutputs) so caret positions stay
+		// consistent with where glyphs are actually drawn.
+		logical := make([]*shaping.Output, len(outputs))
+		for i := range outputs {
+			logical[i] = &outputs[i]
+		}
+		slices.SortFunc(logical, func(a, b *shaping.Output) int {
+			return a.Runes.Offset - b.Runes.Offset
+		})
+		visualIdx := make([]int, len(logical))
+		baseDir := face.diDirection()
+		bidiStart := -1
+		for idx, out := range logical {
+			base := idx
+			if baseDir.Progression() == di.TowardTopLeft {
+				base = len(logical) - 1 - idx
+			}
+			visualIdx[idx] = base
+			if out.Direction == baseDir {
+				if bidiStart != -1 {
+					slices.Reverse(visualIdx[bidiStart:idx])
+					bidiStart = -1
+				}
+			} else if bidiStart == -1 {
+				bidiStart = idx
 			}
 		}
-		for i := 1; i < len(a); i++ {
-			a[i] += a[i-1]
+		if bidiStart != -1 {
+			slices.Reverse(visualIdx[bidiStart:])
 		}
+
+		// Walk runs in visual order to compute each run's left-edge X
+		// along the line.
+		runLeftX := make([]fixed.Int26_6, len(logical))
+		order := make([]int, len(logical))
+		for i, vi := range visualIdx {
+			order[vi] = i
+		}
+		var x fixed.Int26_6
+		for _, idx := range order {
+			runLeftX[idx] = x
+			x += logical[idx].Advance
+		}
+		totalWidth := x
+
+		// Record the leading-edge X at each cluster-start logical byte.
+		// Within a run, glyphs are emitted in visual order (leftmost
+		// first) regardless of run direction; for an LTR run the leading
+		// edge is on the left side of the visual glyph, for an RTL run
+		// it is on the right side.
+		a := make([]fixed.Int26_6, len(text)+1)
+		set := make([]bool, len(text)+1)
+		for i, out := range logical {
+			rtl := out.Direction.Progression() == di.TowardTopLeft
+			var cum fixed.Int26_6 // sum of advances of earlier glyphs in this run
+			for gi := range out.Glyphs {
+				gl := &out.Glyphs[gi]
+				startByte := runeToByte[gl.ClusterIndex]
+				var leading fixed.Int26_6
+				if rtl {
+					leading = runLeftX[i] + cum + gl.Advance
+				} else {
+					leading = runLeftX[i] + cum
+				}
+				// The first glyph of a multi-glyph cluster wins; later
+				// glyphs in the same cluster share the leading edge.
+				if !set[startByte] {
+					a[startByte] = leading
+					set[startByte] = true
+				}
+				cum += gl.Advance
+			}
+		}
+
+		// Bytes that don't start a cluster (interior bytes of a
+		// multi-byte rune or a multi-rune cluster) snap to the cluster's
+		// leading-edge X in logical order.
+		for i := 1; i < len(a); i++ {
+			if !set[i] {
+				a[i] = a[i-1]
+			}
+		}
+		// The end-of-text entry is the total visual line width.
+		a[len(text)] = totalWidth
 		return a, true
 	})
 }
@@ -467,7 +559,18 @@ func (g *GoTextFaceSource) buildOutputs(text string, face *GoTextFace, skipExten
 
 	inputs := g.seg.Split(input, &singleFontmap{face: g.f})
 
-	// Reverse the input for RTL texts.
+	// Reverse the input for RTL texts. This is a one-level
+	// approximation of Unicode bidi rule L2: it produces the correct
+	// visual run order for pure-RTL text and for RTL-base lines with
+	// at most one level of embedded LTR, but it diverges from L2 when
+	// multiple separately-shaped runs of the non-base direction need
+	// to be reordered relative to each other (e.g., Hebrew followed
+	// by Arabic inside an LTR-base line) or when explicit bidi
+	// controls introduce level-2+ embeddings.
+	//
+	// TODO: replace this with a proper L2 visual-order walk in
+	// buildGlyphs so the renderer agrees with AdvanceAt, which already
+	// computes visual positions via L2.
 	if face.Direction == DirectionRightToLeft {
 		slices.Reverse(inputs)
 	}

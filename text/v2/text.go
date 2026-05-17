@@ -298,18 +298,27 @@ func Advance(text string, face Face) float64 {
 	return face.advanceAt(text, len(text))
 }
 
-// AdvanceAt returns the advanced distance from the origin position to indexInBytes,
-// computed from the in-context shape of text. It is intended for caret and
-// selection positioning within a line.
+// AdvanceAt returns the visual distance from the line's origin to the caret
+// at indexInBytes, computed from the in-context shape of text. It is intended
+// for caret and selection positioning within a line.
 //
 // AdvanceAt doesn't treat multiple lines.
 //
-// AdvanceAt(text, len(text), face) is equivalent to the previous [Advance].
 // AdvanceAt(text, 0, face) is 0.
+// AdvanceAt(text, len(text), face) is the total visual line width, the same
+// value as the deprecated [Advance].
 //
 // If indexInBytes falls strictly inside a glyph cluster (e.g., between bytes
 // of a ligature, a multi-byte rune, or a combining mark and its base), the
-// returned advance is snapped to the cluster's start.
+// returned value is snapped to the cluster's leading-edge position in logical
+// order.
+//
+// For bidirectional text, AdvanceAt uses a leading-edge convention: the
+// returned value is the leading edge of the cluster that starts at
+// indexInBytes — the left side of the cluster for left-to-right runs, the
+// right side for right-to-left runs. A logical position on a bidi level
+// boundary has two visually valid caret positions, and this single-value API
+// returns one of them; affinity-aware positioning is not exposed.
 //
 // AdvanceAt panics if indexInBytes is negative or greater than len(text).
 //
