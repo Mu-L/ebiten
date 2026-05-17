@@ -62,27 +62,35 @@ type goTextGlyph struct {
 type goTextOutputCacheValue struct {
 	outputs []shaping.Output
 
-	// text and face are the inputs that produced outputs. They are retained so
-	// per-glyph data can be built lazily by ensureGlyphs.
-	text string
-	face *GoTextFace
+	// advances is lazily built by ensureAdvances from outputs. The text
+	// used to derive advances is implied by the cache key, so it is passed
+	// in to ensureAdvances rather than retained on the value.
+	advances     []fixed.Int26_6
+	advancesOnce sync.Once
 
-	// glyphs is lazily built by ensureGlyphs. A nil slice means glyphs have not
-	// been built yet; a non-nil (possibly empty) slice means they have.
-	// Protected by GoTextFaceSource.shapeMu.
-	glyphs []goTextGlyph
+	// glyphs is lazily built by ensureGlyphs from outputs plus the
+	// (text, face) inputs implied by the cache key.
+	glyphs     []goTextGlyph
+	glyphsOnce sync.Once
+}
+
+// ensureAdvances returns the leading-edge X for each byte position in
+// text, building it on first access. See [GoTextFaceSource.advances]
+// for the meaning of the returned slice.
+func (v *goTextOutputCacheValue) ensureAdvances(text string) []fixed.Int26_6 {
+	v.advancesOnce.Do(func() {
+		v.advances = buildAdvances(v.outputs, text)
+	})
+	return v.advances
 }
 
 // ensureGlyphs returns per-glyph data, building it on first access.
-func (v *goTextOutputCacheValue) ensureGlyphs(g *GoTextFaceSource) []goTextGlyph {
-	g.shapeMu.Lock()
-	defer g.shapeMu.Unlock()
-	if v.glyphs == nil {
-		v.glyphs = g.buildGlyphs(v.outputs, v.text, v.face)
-		// The inputs are no longer needed; release the face reference.
-		v.text = ""
-		v.face = nil
-	}
+func (v *goTextOutputCacheValue) ensureGlyphs(g *GoTextFaceSource, text string, face *GoTextFace) []goTextGlyph {
+	v.glyphsOnce.Do(func() {
+		g.shapeMu.Lock()
+		defer g.shapeMu.Unlock()
+		v.glyphs = g.buildGlyphs(v.outputs, text, face)
+	})
 	return v.glyphs
 }
 
@@ -216,7 +224,6 @@ type GoTextFaceSource struct {
 	metadata Metadata
 
 	outputCache     *cache[goTextOutputCacheKey, *goTextOutputCacheValue]
-	advanceCache    *cache[goTextOutputCacheKey, []fixed.Int26_6]
 	glyphImageCache map[float64]*cache[goTextGlyphImageCacheKey, *ebiten.Image]
 	hasGlyphCache   runeToBoolMap
 
@@ -282,7 +289,6 @@ func newGoTextFaceSource(face *font.Face) *GoTextFaceSource {
 	s.addr = s
 	s.metadata = metadataFromFace(face)
 	s.outputCache = newCache[goTextOutputCacheKey, *goTextOutputCacheValue](512)
-	s.advanceCache = newCache[goTextOutputCacheKey, []fixed.Int26_6](512)
 	// 4 is an arbitrary number, which should not cause troubles.
 	s.shaper.SetFontCacheSize(4)
 	return s
@@ -371,67 +377,66 @@ func (g *GoTextFaceSource) UnsafeInternal() any {
 // at a bidi level boundary; affinity-aware positioning is not exposed.
 func (g *GoTextFaceSource) advances(text string, face *GoTextFace) []fixed.Int26_6 {
 	g.copyCheck()
+	return g.outputCacheValue(text, face).ensureAdvances(text)
+}
 
-	key := face.outputCacheKey(text)
-	return g.advanceCache.getOrCreate(key, func() ([]fixed.Int26_6, bool) {
-		g.shapeMu.Lock()
-		defer g.shapeMu.Unlock()
-		outputs := g.buildOutputs(text, face, true)
+// buildAdvances derives the leading-edge X for each byte position in
+// text from already-shaped outputs. See [GoTextFaceSource.advances] for
+// the meaning of the returned slice.
+func buildAdvances(outputs []shaping.Output, text string) []fixed.Int26_6 {
+	// Rune index → byte index, plus a final entry at len(text).
+	runeToByte := make([]int, 0, len(text)+1)
+	for i := range text {
+		runeToByte = append(runeToByte, i)
+	}
+	runeToByte = append(runeToByte, len(text))
 
-		// Rune index → byte index, plus a final entry at len(text).
-		runeToByte := make([]int, 0, len(text)+1)
-		for i := range text {
-			runeToByte = append(runeToByte, i)
-		}
-		runeToByte = append(runeToByte, len(text))
-
-		// buildOutputs returns outputs in visual left-to-right order, so
-		// walking the slice and accumulating each run's Advance yields
-		// each run's left-edge X. Within a run HarfBuzz emits glyphs in
-		// visual order (leftmost first) regardless of run direction; the
-		// leading edge of a cluster is on the left side of its visual
-		// glyph for an LTR run and on the right side for an RTL run.
-		a := make([]fixed.Int26_6, len(text)+1)
-		set := make([]bool, len(text)+1)
-		var x fixed.Int26_6
-		for oi := range outputs {
-			out := &outputs[oi]
-			runLeftX := x
-			rtl := out.Direction.Progression() == di.TowardTopLeft
-			var cum fixed.Int26_6 // sum of advances of earlier glyphs in this run
-			for gi := range out.Glyphs {
-				gl := &out.Glyphs[gi]
-				startByte := runeToByte[gl.ClusterIndex]
-				var leading fixed.Int26_6
-				if rtl {
-					leading = runLeftX + cum + gl.Advance
-				} else {
-					leading = runLeftX + cum
-				}
-				// The first glyph of a multi-glyph cluster wins; later
-				// glyphs in the same cluster share the leading edge.
-				if !set[startByte] {
-					a[startByte] = leading
-					set[startByte] = true
-				}
-				cum += gl.Advance
+	// buildOutputs returns outputs in visual left-to-right order, so
+	// walking the slice and accumulating each run's Advance yields
+	// each run's left-edge X. Within a run HarfBuzz emits glyphs in
+	// visual order (leftmost first) regardless of run direction; the
+	// leading edge of a cluster is on the left side of its visual
+	// glyph for an LTR run and on the right side for an RTL run.
+	a := make([]fixed.Int26_6, len(text)+1)
+	set := make([]bool, len(text)+1)
+	var x fixed.Int26_6
+	for oi := range outputs {
+		out := &outputs[oi]
+		runLeftX := x
+		rtl := out.Direction.Progression() == di.TowardTopLeft
+		var cum fixed.Int26_6 // sum of advances of earlier glyphs in this run
+		for gi := range out.Glyphs {
+			gl := &out.Glyphs[gi]
+			startByte := runeToByte[gl.ClusterIndex]
+			var leading fixed.Int26_6
+			if rtl {
+				leading = runLeftX + cum + gl.Advance
+			} else {
+				leading = runLeftX + cum
 			}
-			x += out.Advance
-		}
-		totalWidth := x
-
-		// Bytes that don't start a cluster (interior bytes of a
-		// multi-byte rune or a multi-rune cluster) snap to the cluster's
-		// leading-edge X in logical order.
-		for i := 1; i < len(a); i++ {
-			if !set[i] {
-				a[i] = a[i-1]
+			// The first glyph of a multi-glyph cluster wins; later
+			// glyphs in the same cluster share the leading edge.
+			if !set[startByte] {
+				a[startByte] = leading
+				set[startByte] = true
 			}
+			cum += gl.Advance
 		}
-		// The end-of-text entry is the total visual line width.
-		a[len(text)] = totalWidth
-		return a, true
-	})
+		x += out.Advance
+	}
+	totalWidth := x
+
+	// Bytes that don't start a cluster (interior bytes of a
+	// multi-byte rune or a multi-rune cluster) snap to the cluster's
+	// leading-edge X in logical order.
+	for i := 1; i < len(a); i++ {
+		if !set[i] {
+			a[i] = a[i-1]
+		}
+	}
+	// The end-of-text entry is the total visual line width.
+	a[len(text)] = totalWidth
+	return a
 }
 
 // advanceAt returns the advance from the start of text to indexInBytes.
@@ -451,18 +456,23 @@ func (g *GoTextFaceSource) advanceAt(text string, face *GoTextFace, indexInBytes
 // outputs.
 func (g *GoTextFaceSource) glyphs(text string, face *GoTextFace) []goTextGlyph {
 	g.copyCheck()
+	return g.outputCacheValue(text, face).ensureGlyphs(g, text, face)
+}
 
+// outputCacheValue returns the cached shape-output bundle for the
+// (text, face) pair, shaping it on first lookup. Both
+// [GoTextFaceSource.advances] and [GoTextFaceSource.glyphs] derive
+// their results from this single shaped form, so one piece of text is
+// shaped at most once regardless of which path arrives first.
+func (g *GoTextFaceSource) outputCacheValue(text string, face *GoTextFace) *goTextOutputCacheValue {
 	key := face.outputCacheKey(text)
-	e := g.outputCache.getOrCreate(key, func() (*goTextOutputCacheValue, bool) {
+	return g.outputCache.getOrCreate(key, func() (*goTextOutputCacheValue, bool) {
 		g.shapeMu.Lock()
 		defer g.shapeMu.Unlock()
 		return &goTextOutputCacheValue{
-			outputs: g.buildOutputs(text, face, false),
-			text:    text,
-			face:    face,
+			outputs: g.buildOutputs(text, face),
 		}, true
 	})
-	return e.ensureGlyphs(g)
 }
 
 // applyFaceState updates the shared font state to reflect face and
@@ -490,12 +500,11 @@ func (g *GoTextFaceSource) applyFaceState(face *GoTextFace) (xPpem, yPpem uint16
 	return xPpem, yPpem, useBitmap
 }
 
-// buildOutputs runs HarfBuzz shaping on text and returns the per-segment outputs.
-// When skipExtents is true, glyph extents are not queried, which is cheaper and
-// suitable when only advance is required.
+// buildOutputs runs HarfBuzz shaping on text and returns the per-segment
+// outputs, including per-glyph extents.
 //
 // The caller must hold g.shapeMu.
-func (g *GoTextFaceSource) buildOutputs(text string, face *GoTextFace, skipExtents bool) []shaping.Output {
+func (g *GoTextFaceSource) buildOutputs(text string, face *GoTextFace) []shaping.Output {
 	_, _, _ = g.applyFaceState(face)
 
 	g.runes = g.runes[:0]
@@ -550,12 +559,7 @@ func (g *GoTextFaceSource) buildOutputs(text string, face *GoTextFace, skipExten
 
 	outputs := make([]shaping.Output, len(inputs))
 	for i, input := range inputs {
-		var out shaping.Output
-		if skipExtents {
-			out = g.shaper.ShapeNoExtents(input)
-		} else {
-			out = g.shaper.Shape(input)
-		}
+		out := g.shaper.Shape(input)
 		outputs[i] = out
 
 		(shaping.Line{out}).AdjustBaselines()
@@ -610,9 +614,7 @@ func l2VisualOrder(levels []bidi.Level) []int {
 
 // buildGlyphs converts already-shaped outputs into per-glyph render
 // data entries (each carrying eager bounds plus the parameters needed
-// for a later realize). It always returns a non-nil slice so that
-// callers can use a nil check to distinguish unbuilt entries from
-// entries that built to zero glyphs.
+// for a later realize).
 //
 // The caller must hold g.shapeMu.
 func (g *GoTextFaceSource) buildGlyphs(outputs []shaping.Output, text string, face *GoTextFace) []goTextGlyph {
@@ -636,7 +638,7 @@ func (g *GoTextFaceSource) buildGlyphs(outputs []shaping.Output, text string, fa
 		variationsSnapshot = append([]font.Variation(nil), face.variations...)
 	}
 
-	gs := []goTextGlyph{}
+	var gs []goTextGlyph
 	for _, out := range outputs {
 		sideways := out.Direction.IsSideways()
 		for _, gl := range out.Glyphs {
