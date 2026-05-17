@@ -1020,6 +1020,43 @@ func TestAdvanceAtMultiFace(t *testing.T) {
 	}
 }
 
+// Issue #3458
+func TestAdvanceAtLineBreak(t *testing.T) {
+	const eps = 1.0 / (1 << 6)
+
+	source, err := text.NewGoTextFaceSource(bytes.NewReader(fonts.MPlus1pRegular_ttf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	face := &text.GoTextFace{
+		Source:    source,
+		Size:      24,
+		Direction: text.DirectionLeftToRight,
+	}
+
+	baseline := text.AdvanceAt("a", 1, face)
+	if baseline == 0 {
+		t.Fatalf("AdvanceAt(%q, 1, _) = 0, want non-zero", "a")
+	}
+
+	// AdvanceAt operates on the first line only. For each tail, the result
+	// at every byte position from len("a") to len("a"+tail) must equal the
+	// advance at the end of the first line.
+	tails := []string{
+		"\n", "\r", "\v", "\f", "\u0085", "\u2028", "\u2029", "\r\n",
+		"\nb", "\nbcd", "\r\nbcd",
+	}
+	for _, tail := range tails {
+		str := "a" + tail
+		for i := 1; i <= len(str); i++ {
+			got := text.AdvanceAt(str, i, face)
+			if math.Abs(got-baseline) > eps {
+				t.Errorf("AdvanceAt(%q, %d, _) = %v, want %v", str, i, got, baseline)
+			}
+		}
+	}
+}
+
 func TestAdvanceAtPanic(t *testing.T) {
 	source, err := text.NewGoTextFaceSource(bytes.NewReader(fonts.MPlus1pRegular_ttf))
 	if err != nil {

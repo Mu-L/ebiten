@@ -302,7 +302,9 @@ func Advance(text string, face Face) float64 {
 // at indexInBytes, computed from the in-context shape of text. It is intended
 // for caret and selection positioning within a line.
 //
-// AdvanceAt doesn't treat multiple lines.
+// AdvanceAt operates on the first line of text only: any content from the
+// first line break onward is ignored, and an indexInBytes that falls on or
+// past the first line break is treated as the end of the first line.
 //
 // AdvanceAt(text, 0, face) is 0.
 // AdvanceAt(text, len(text), face) is the total visual line width, the same
@@ -326,6 +328,10 @@ func Advance(text string, face Face) float64 {
 func AdvanceAt(text string, indexInBytes int, face Face) float64 {
 	if indexInBytes < 0 || indexInBytes > len(text) {
 		panic(fmt.Sprintf("text: indexInBytes %d is out of range [0, %d] at AdvanceAt", indexInBytes, len(text)))
+	}
+	if firstLine := textutil.FirstLine(text); len(firstLine) < len(text) {
+		text = firstLine
+		indexInBytes = min(indexInBytes, len(text))
 	}
 	return face.advanceAt(text, indexInBytes)
 }

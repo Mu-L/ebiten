@@ -42,6 +42,15 @@ func Lines(str string) iter.Seq[string] {
 	}
 }
 
+// FirstLine returns the prefix of str up to (but not including) the first
+// line break. If str has no line break, FirstLine returns str unchanged.
+func FirstLine(str string) string {
+	if idx := strings.IndexAny(str, "\n\v\f\r\u0085\u2028\u2029"); idx >= 0 {
+		return str[:idx]
+	}
+	return str
+}
+
 func TrimTailingLineBreak(str string) string {
 	// https://en.wikipedia.org/wiki/Newline#Unicode
 
