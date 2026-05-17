@@ -17,15 +17,15 @@ package main
 import (
 	"bytes"
 	_ "embed"
+	"image"
 	"image/color"
 	"log"
 
+	"github.com/ebitengine/debugui"
 	"golang.org/x/text/language"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/examples/resources/fonts"
-	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
@@ -111,19 +111,24 @@ const (
 )
 
 type Game struct {
+	debugui     debugui.DebugUI
 	showOrigins bool
 }
 
 func (g *Game) Update() error {
-	if inpututil.IsKeyJustPressed(ebiten.KeyO) {
-		g.showOrigins = !g.showOrigins
+	if _, err := g.debugui.Update(func(ctx *debugui.Context) error {
+		ctx.Window("Text I18N", image.Rect(10, 10, 540, 108), func(layout debugui.ContainerLayout) {
+			ctx.Checkbox(&g.showOrigins, "Show origins")
+			ctx.Text("Red points are the original origin positions. Green points are the origin positions after applying the offset.")
+		})
+		return nil
+	}); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	ebitenutil.DebugPrint(screen, "Press O to show/hide origins.\nRed points are the original origin positions.\nThe green points are the origin positions after applying the offset.")
-
 	gray := color.RGBA{0x80, 0x80, 0x80, 0xff}
 
 	{
@@ -134,7 +139,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			Size:      24,
 			Language:  language.Arabic,
 		}
-		x, y := screenWidth-20, 50
+		x, y := screenWidth-20, 115
 		w, h := text.Measure(arabicText, f, 0)
 		// The left upper point is not x but x-w, since the text runs in the rigth-to-left direction.
 		vector.FillRect(screen, float32(x)-float32(w), float32(y), float32(w), float32(h), gray, false)
@@ -157,7 +162,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			Size:     24,
 			Language: language.Hindi,
 		}
-		x, y := 20, 110
+		x, y := 20, 175
 		w, h := text.Measure(hindiText, f, 0)
 		vector.FillRect(screen, float32(x), float32(y), float32(w), float32(h), gray, false)
 		op := &text.DrawOptions{}
@@ -179,7 +184,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			Size:     24,
 			Language: language.Burmese,
 		}
-		x, y := 20, 170
+		x, y := 20, 220
 		w, h := text.Measure(myanmarText, f, 0)
 		vector.FillRect(screen, float32(x), float32(y), float32(w), float32(h), gray, false)
 		op := &text.DrawOptions{}
@@ -201,7 +206,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			Size:     24,
 			Language: language.Thai,
 		}
-		x, y := 20, 230
+		x, y := 20, 280
 		w, h := text.Measure(thaiText, f, 0)
 		vector.FillRect(screen, float32(x), float32(y), float32(w), float32(h), gray, false)
 		op := &text.DrawOptions{}
@@ -227,7 +232,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			Script: language.MustParseScript("Mong"),
 		}
 		const lineSpacing = 48
-		x, y := 20, 290
+		x, y := 20, 330
 		w, h := text.Measure(mongolianText, f, lineSpacing)
 		vector.FillRect(screen, float32(x), float32(y), float32(w), float32(h), gray, false)
 		op := &text.DrawOptions{}
@@ -253,7 +258,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			Language:  language.Japanese,
 		}
 		const lineSpacing = 48
-		x, y := screenWidth-20, 290
+		x, y := screenWidth-20, 330
 		w, h := text.Measure(japaneseText, f, lineSpacing)
 		// The left upper point is not x but x-w, since the text runs in the rigth-to-left direction as the secondary direction.
 		vector.FillRect(screen, float32(x)-float32(w), float32(y), float32(w), float32(h), gray, false)
@@ -271,6 +276,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			}
 		}
 	}
+
+	g.debugui.Draw(screen)
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
