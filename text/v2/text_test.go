@@ -966,6 +966,26 @@ func TestAdvanceAtBidi(t *testing.T) {
 	if !(leadE+eps < leadJa) {
 		t.Errorf("RTL-base mixed bidi: leading inside Hello = %v, want < leading at こ = %v", leadE, leadJa)
 	}
+
+	// L1: trailing whitespace in a line that ends with an RTL run under
+	// LTR base should land at the visual right end, not interleaved with
+	// the RTL run. Without L1 the trailing spaces would inherit the RTL
+	// level and L2 would place them inside the Hebrew word.
+	const tailText = "Hello עברית   "
+	tailStart := len("Hello עברית")
+	leadSpace := text.AdvanceAt(tailText, tailStart, face) // first trailing space
+	leadEnd := text.AdvanceAt(tailText, len(tailText), face)
+	// Pick a position inside the Hebrew run. "עברית" runes are 2 bytes
+	// each; byte len("Hello ")+2 is the start of the second Hebrew letter.
+	leadInsideHebrew := text.AdvanceAt(tailText, len("Hello ")+2, face)
+	if !(leadInsideHebrew+eps < leadSpace) {
+		t.Errorf("L1 trailing whitespace: leading inside Hebrew = %v, want < leading at first trailing space = %v",
+			leadInsideHebrew, leadSpace)
+	}
+	if !(leadSpace+eps < leadEnd) {
+		t.Errorf("L1 trailing whitespace: leading at first trailing space = %v, want < leading at end = %v",
+			leadSpace, leadEnd)
+	}
 }
 
 func TestAdvanceAtMultiFace(t *testing.T) {

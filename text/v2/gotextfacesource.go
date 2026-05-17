@@ -520,8 +520,8 @@ func (g *GoTextFaceSource) buildOutputs(text string, face *GoTextFace, skipExten
 	// Unicode Bidirectional Algorithm to obtain per-run levels and
 	// applying rule L2. The segmenter already splits the text at bidi
 	// boundaries, so every input is at a single uniform level. L2 is
-	// skipped for vertical faces, where horizontal bidi reordering does
-	// not apply.
+	// skipped for vertical faces. Rule L1 is applied by
+	// bidi.Paragraph.Segment itself.
 	if !face.diDirection().IsVertical() && len(inputs) > 1 {
 		defaultBidiDir := bidi.LeftToRight
 		if face.diDirection().Progression() == di.TowardTopLeft {
