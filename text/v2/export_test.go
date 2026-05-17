@@ -15,8 +15,13 @@
 package text
 
 import (
+	"github.com/go-text/typesetting/bidi"
 	"golang.org/x/image/math/fixed"
 )
+
+func L2VisualOrder(levels []bidi.Level) []int {
+	return l2VisualOrder(levels)
+}
 
 func Fixed26_6ToFloat32(x fixed.Int26_6) float32 {
 	return fixed26_6ToFloat32(x)

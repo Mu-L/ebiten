@@ -27,6 +27,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-text/typesetting/bidi"
 	"github.com/hajimehoshi/bitmapfont/v4"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
@@ -947,6 +948,24 @@ func TestAdvanceAtBidi(t *testing.T) {
 	if leadGimel := at2(7); !(full2 > leadGimel+eps) {
 		t.Errorf("AdvanceAt(len) = %v, want strictly > leading(ג) = %v", full2, leadGimel)
 	}
+
+	// Base-RTL paragraph with multiple separately-shaped LTR runs.
+	// Under proper L2, the two adjacent level-2 runs "Hello " and
+	// "こんにちは" are reversed among themselves: the Japanese word is
+	// laid out visually to the right of the English word, not to its
+	// left as a single global slice reversal would do. Comparing the
+	// caret X inside each catches that distinction.
+	rtlBase := &text.GoTextFace{
+		Source:    source,
+		Size:      24,
+		Direction: text.DirectionRightToLeft,
+	}
+	const rtlText = "Hello こんにちは (שלום) world!"
+	leadE := text.AdvanceAt(rtlText, 1, rtlBase)              // inside "Hello"
+	leadJa := text.AdvanceAt(rtlText, len("Hello "), rtlBase) // start of "こんにちは"
+	if !(leadE+eps < leadJa) {
+		t.Errorf("RTL-base mixed bidi: leading inside Hello = %v, want < leading at こ = %v", leadE, leadJa)
+	}
 }
 
 func TestAdvanceAtMultiFace(t *testing.T) {
@@ -998,5 +1017,74 @@ func TestAdvanceAtPanic(t *testing.T) {
 			}()
 			_ = text.AdvanceAt(str, indexInBytes, face)
 		}()
+	}
+}
+
+func TestL2VisualOrder(t *testing.T) {
+	cases := []struct {
+		name   string
+		levels []bidi.Level
+		want   []int
+	}{
+		{
+			name:   "empty",
+			levels: nil,
+			want:   []int{},
+		},
+		{
+			name:   "single",
+			levels: []bidi.Level{1},
+			want:   []int{0},
+		},
+		{
+			name:   "pure LTR",
+			levels: []bidi.Level{0, 0, 0},
+			want:   []int{0, 1, 2},
+		},
+		{
+			name:   "pure RTL",
+			levels: []bidi.Level{1, 1, 1},
+			want:   []int{2, 1, 0},
+		},
+		{
+			name:   "LTR base with one RTL run",
+			levels: []bidi.Level{0, 1, 0},
+			want:   []int{0, 1, 2},
+		},
+		{
+			name:   "LTR base with two adjacent RTL runs",
+			levels: []bidi.Level{0, 1, 1, 0},
+			want:   []int{0, 2, 1, 3},
+		},
+		{
+			name:   "RTL base with one nested LTR",
+			levels: []bidi.Level{1, 2, 1},
+			want:   []int{2, 1, 0},
+		},
+		{
+			name:   "RTL base mixed (Hello+JP / Hebrew / world / !)",
+			levels: []bidi.Level{2, 2, 1, 2, 1},
+			want:   []int{4, 3, 2, 0, 1},
+		},
+		{
+			name:   "three-level nesting",
+			levels: []bidi.Level{0, 1, 2, 1, 0},
+			want:   []int{0, 3, 2, 1, 4},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := text.L2VisualOrder(tc.levels)
+			if len(got) != len(tc.want) {
+				t.Fatalf("L2VisualOrder(%v) length = %d, want %d", tc.levels, len(got), len(tc.want))
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("L2VisualOrder(%v) = %v, want %v", tc.levels, got, tc.want)
+					break
+				}
+			}
+		})
 	}
 }
